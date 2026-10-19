@@ -14,6 +14,7 @@ import TimeOffBalancesBoard from '../TimeOffBalancesBoard';
 import Linkify from '../Linkify';
 import { allowedBalanceTypes } from '../employment';
 import LinkTextarea from '../LinkTextarea';
+import { HoursRequestsAdmin } from '../HoursChangeRequests';
 
 // Building blocks for the pages under the username menu (My profile,
 // My time, ADMIN). This file used to be the single "/me" page; the pages
@@ -40,6 +41,9 @@ export const BRAND_SERIF = 'inherit'; // headings use the app's one font (Oct 20
 const BORDER = '#e2e4e9';
 
 const BALANCE_TYPES = ['PTO', 'UPTO'];
+// Staff set these for themselves with no approval (Kieran, Oct 2026): the
+// API approves them on the spot (SELF_SERVE_TYPES in routes/timeOff.js).
+const SELF_SERVE_TYPES = ['Lunch', 'Meeting', 'Unavailable'];
 const BALANCE_NEUTRAL_TYPES = ['Lunch', 'Meeting', 'Unavailable', 'Other'];
 const WEEKDAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 function formatDate(d) {
@@ -163,7 +167,7 @@ function AttendeePicker({ selected, onChange, exclude, isMobile, labelStyle }) {
         </div>
       )}
       <p style={{ fontSize: 11.5, color: '#9ca3af', margin: '4px 0 0' }}>
-        Once approved it goes on their calendars too, with one shared agenda and comment thread.
+        It goes on their calendars too, with one shared agenda and comment thread.
       </p>
     </div>
   );
@@ -234,6 +238,9 @@ function RequestForm({ onSubmitted, onCancel, isMobile, editingRequest, adminFor
   // would take their balance below zero. That's allowed; it just needs an
   // admin's approval. (Admins get their own warning from the server.)
   const selfService = !adminMode && !editingRequest;
+  // Your own lunch / meeting / unavailable time saves straight onto the
+  // schedule; a change counts only when it stays one of those both ways.
+  const selfServeNow = selfService && SELF_SERVE_TYPES.includes(requestType) && (!isChange || SELF_SERVE_TYPES.includes(changeOf.request_type));
 
   // What this span would cost in scheduled hours (asked of the API, since
   // it depends on the person's schedule and office closures).
@@ -306,9 +313,9 @@ function RequestForm({ onSubmitted, onCancel, isMobile, editingRequest, adminFor
       record.confirm_negative_balance = confirmNegative;
     } else if (adminMode) Object.assign(record, { username: adminFor, confirm_negative_balance: confirmNegative });
     setSaving(true);
+    let saved;
     try {
-      if (isEditing) await api.editTimeOffRequest(editingRequest.id, record);
-      else await api.submitTimeOffRequest(record);
+      saved = isEditing ? await api.editTimeOffRequest(editingRequest.id, record) : await api.submitTimeOffRequest(record);
     } catch (err) {
       setSaving(false);
       if (err.status === 409 && err.data?.negativeBalance) setNegativeWarning(err.data.negativeBalance);
@@ -316,7 +323,7 @@ function RequestForm({ onSubmitted, onCancel, isMobile, editingRequest, adminFor
       return;
     }
     setSaving(false);
-    onSubmitted(adminFor !== undefined ? adminFor : undefined);
+    onSubmitted(adminFor !== undefined ? adminFor : undefined, saved);
   };
   const fmtHours = (h) => `${Number(h.toFixed(2))} ${Math.abs(h) === 1 ? 'hour' : 'hours'}`;
 
@@ -454,9 +461,16 @@ function RequestForm({ onSubmitted, onCancel, isMobile, editingRequest, adminFor
           Added time off is approved right away: it goes straight on their schedule and PTO/UPTO hours come off their balance.
         </p>
       )}
+      {selfServeNow && !isChange && (
+        <p style={{ fontSize: 12, color: BRAND.muted, margin: '0 0 12px' }}>
+          {requestType} goes straight on your schedule. No approval needed.
+        </p>
+      )}
       {isChange && !negativeWarning && (
         <p style={{ fontSize: 12, color: BRAND.muted, margin: '0 0 12px' }}>
-          {changeApplies
+          {selfServeNow
+            ? 'Your change applies right away: the schedule updates.'
+            : changeApplies
             ? 'Your change applies right away: the schedule updates and PTO/UPTO hours are adjusted.'
             : cancelsOriginal
               ? `Submitting cancels your current ${changeOf.request_type} right away -- its hours go back to your balance and it comes off the schedule -- and sends this as a new request for approval. If it's denied, you won't have this time off.`
@@ -466,7 +480,7 @@ function RequestForm({ onSubmitted, onCancel, isMobile, editingRequest, adminFor
 
       <div style={{ display: 'flex', gap: 8, flexDirection: isMobile ? 'column' : 'row' }}>
         <button onClick={() => handleSubmit(false)} disabled={saving || !!negativeWarning} style={{ padding: isMobile ? '11px' : '8px 16px', borderRadius: 6, fontSize: isMobile ? 14.5 : 13, fontWeight: 600, border: 'none', background: BRAND.forest, color: 'white', cursor: 'pointer' }}>
-          {saving ? 'Saving...' : isEditing ? 'Save Changes' : isChange ? (changeApplies ? 'Save changes' : cancelsOriginal ? 'Cancel it and submit new request' : 'Submit change for approval') : adminMode ? 'Add time off' : 'Submit Request'}
+          {saving ? 'Saving...' : isEditing ? 'Save Changes' : isChange ? (changeApplies || selfServeNow ? 'Save changes' : cancelsOriginal ? 'Cancel it and submit new request' : 'Submit change for approval') : adminMode ? 'Add time off' : selfServeNow ? 'Add to my schedule' : 'Submit Request'}
         </button>
         <button onClick={onCancel} disabled={saving} style={{ padding: isMobile ? '11px' : '8px 16px', borderRadius: 6, fontSize: isMobile ? 14.5 : 13, fontWeight: 600, border: `1px solid ${BORDER}`, background: 'white', color: '#374151', cursor: 'pointer' }}>
           Cancel
@@ -656,8 +670,8 @@ export function TimeOffTab({ isMobile, compact, openFormToken, onChanged }) {
     <div>
       {!compact && (
         <p style={{ fontSize: 12.5, color: BRAND.muted, marginBottom: 16, maxWidth: 480 }}>
-          Every kind of time away from the schedule -- vacation, sick time, a lunch break, a standing weekly commitment,
-          anything -- starts as a request here and goes to an admin for approval before it appears on the calendar.
+          Lunch, meetings and unavailable time go straight on your schedule. PTO, UPTO and other time
+          start as a request here and go to an admin for approval before they appear on the calendar.
         </p>
       )}
       {!compact && <BalanceCards balances={balances} isMobile={isMobile} />}
@@ -676,9 +690,9 @@ export function TimeOffTab({ isMobile, compact, openFormToken, onChanged }) {
           isMobile={isMobile}
           adminApplies={canAdminister(me)}
           initialDate={editDate}
-          onDone={() => {
+          onDone={(_, saved) => {
             closeEdit();
-            setNotice(canAdminister(me)
+            setNotice(canAdminister(me) || saved?.self_approved
               ? 'Your change is saved and on the schedule.'
               : BALANCE_TYPES.includes(editing.request_type)
                 ? `Your original ${editing.request_type} was cancelled and its hours returned. The new request is waiting for approval.`
@@ -688,7 +702,7 @@ export function TimeOffTab({ isMobile, compact, openFormToken, onChanged }) {
           onCancel={() => { closeEdit(); load(); }}
         />
       ) : showForm ? (
-        <RequestForm isMobile={isMobile} onSubmitted={() => { setShowForm(false); reload(); }} onCancel={() => setShowForm(false)} />
+        <RequestForm isMobile={isMobile} onSubmitted={(_, saved) => { setShowForm(false); setNotice(saved?.self_approved ? `${saved.request_type} added to your schedule.` : null); reload(); }} onCancel={() => setShowForm(false)} />
       ) : !compact && (
         <button onClick={() => setShowForm(true)} style={{ padding: isMobile ? '12px' : '9px 16px', borderRadius: 6, fontSize: isMobile ? 14.5 : 13, fontWeight: 600, border: 'none', background: BRAND.forest, color: 'white', cursor: 'pointer', marginBottom: 20, width: isMobile ? '100%' : 'auto' }}>
           + New Request
@@ -1096,6 +1110,8 @@ export function TimeOffManageTab({ isMobile, embedded, onChanged, forUsername, o
         </div>
       )}
 
+      {/* Above the tabs so it's seen whichever tab is open. */}
+      <HoursRequestsAdmin forUsername={forUsername} onChanged={onChanged} />
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
         <CountTabs tabs={TABS} active={tab} onPick={setPicked} label="Time off" counts={Object.fromEntries(TABS.map(t => [t.key, groups[t.key]?.length]))} />
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', width: isMobile ? '100%' : 'auto', marginBottom: 6 }}>

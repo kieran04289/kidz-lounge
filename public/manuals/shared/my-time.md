@@ -35,17 +35,28 @@ The **Schedule** card shows your week: your sessions, lunch, meetings and time o
    - **Lunch** or **Meeting:** blocks time on your schedule. A meeting can include other staff, and has an agenda and comments.
    - **Unavailable** or **Other:** blocks time for anything else.
 3. Choose the start and end date and time, and add a note if you like. The form shows how many hours the request will use.
-4. Click **Submit Request**.
+4. Click **Submit Request** (for lunch, a meeting or unavailable time: **Add to my schedule**).
 
 ![Requesting time off](../img/my-time-request.png)
 
-Your request shows as **Pending** until an admin approves or denies it. Approved time off appears on the schedule.
+**Lunch**, **Meeting** and **Unavailable** need no approval: they go straight on your schedule. Everything else (PTO, UPTO and Other) shows as **Pending** until an admin approves or denies it. Approved time off appears on the schedule.
 
 > PTO is charged for your **scheduled** hours only. A full week off uses the hours you'd normally work, not every hour of the week. PTO taken in a row can't be more than two weeks of your usual hours. Ask for any extra days as UPTO. A PTO request can leave you with a negative balance, as long as an admin approves it.
 
 ### Changing or cancelling a request
 
-Your requests are under **Upcoming**, **Pending** and **Past**. **Delete** cancels a request. Hours used by approved PTO go back on your balance. To change an approved PTO or UPTO request, edit it: the original is cancelled, and the change goes in as a new request for approval.
+Your requests are under **Upcoming**, **Pending** and **Past**. **Delete** cancels a request. Hours used by approved PTO go back on your balance. To change an approved PTO or UPTO request, edit it: the original is cancelled, and the change goes in as a new request for approval. Changes to your lunch, meetings and unavailable time apply right away.
+
+### Changing your contracted hours
+
+Providers can ask for new contracted hours from the **Contracted hours** card.
+
+1. Click **Request a change**.
+2. Choose the date the new hours start. Tick **Ends on (temporary)** and pick a last day if they're only for a while.
+3. Set the hours for each day you'll work. Unticked days mean you're not contracted that day.
+4. Add a note for the office if you like, and click **Send for approval**.
+
+The request shows as **Pending** on the card, and your hours stay as they are until an admin approves it. **Withdraw** takes it back. You can have one request waiting at a time. If it's denied, the reason shows on the card.
 
 ### Balance history
 

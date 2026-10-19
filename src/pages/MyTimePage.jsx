@@ -9,6 +9,7 @@ import TimeOffHistory from '../TimeOffHistory';
 import { Card, Tag, PageHeader, StatStrip, Stat } from '../dashboardUi';
 import { INK, MUTED, SUBTLE, HAIRLINE, PAGE_BG, FONT, NUMERIC, ACCENT, buttonStyle } from '../uiTokens';
 import { AppointmentModal, OOOModal, dateToInputValue, formatSlotLabel } from './SchedulePage';
+import { MyHoursRequests } from '../HoursChangeRequests';
 
 // My time: a personal dashboard for everything about your time at work --
 // balances and what they'll be, your week, what's coming up, your contracted
@@ -322,14 +323,14 @@ function ComingUp({ items }) {
 // ---------- my hours ----------
 const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-function MyHoursCard({ isProvider, standing, changes, officeHours }) {
+function MyHoursCard({ isProvider, standing, changes, officeHours, providerName }) {
   const today = todayStr();
   const upcoming = changes.filter(c => !c.end_date || c.end_date >= today).slice(0, 3);
   const rows = isProvider ? standing : officeHours.map(o => ({ weekday: o.weekday, start_time: o.open_time, end_time: o.close_time }));
   const total = rows.reduce((sum, r) => sum + (mins(r.end_time) - mins(r.start_time)) / 60, 0);
   return (
     <Card title={isProvider ? 'Contracted hours' : 'Office hours'} action={isProvider && total > 0 ? <span style={{ fontSize: 12.5, color: MUTED, ...NUMERIC }}>{hoursText(Math.round(total * 100) / 100)} per week</span> : null}>
-      {rows.length === 0 && <p style={{ fontSize: 13, color: MUTED, margin: 0 }}>{isProvider ? 'No contracted hours are set up yet. Ask an admin.' : 'Office hours aren\'t set up yet.'}</p>}
+      {rows.length === 0 && <p style={{ fontSize: 13, color: MUTED, margin: 0 }}>{isProvider ? 'No contracted hours are set up yet.' : 'Office hours aren\'t set up yet.'}</p>}
       <div>
         {WEEKDAY_ORDER.map(wd => {
           const r = rows.find(x => Number(x.weekday) === wd);
@@ -354,6 +355,9 @@ function MyHoursCard({ isProvider, standing, changes, officeHours }) {
           ))}
         </div>
       )}
+      {/* Lunch, meetings and unavailable time are set without approval;
+          contracted hours go to the office (Kieran, Oct 2026). */}
+      {isProvider && providerName && <MyHoursRequests providerName={providerName} />}
     </Card>
   );
 }
@@ -600,7 +604,7 @@ export default function MyTimePage() {
             {/* Providers: contracted hours + this week */}
             {isProvider && (
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: 20, marginBottom: 20 }}>
-                <MyHoursCard isProvider standing={data.standing} changes={data.changes} officeHours={data.officeHours} />
+                <MyHoursCard isProvider standing={data.standing} changes={data.changes} officeHours={data.officeHours} providerName={providerName} />
                 <ThisWeekCard appointments={week.appointments} contractedHours={contractedThisWeek} />
               </div>
             )}

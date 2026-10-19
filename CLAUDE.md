@@ -102,7 +102,8 @@ The backend is the sibling repo `../kidz-lounge-api`, a single AWS Lambda with P
   - a week timeline whose blocks open the schedule's own popups: `AppointmentModal`, or `OOOModal`, which takes `requestOnly`/`onEdit` for request-only blocks
   - "Coming up", My hours
   - balance history (`src/TimeOffHistory.jsx`, also on staff profiles)
-  - the request list (`TimeOffTab` in `compact` mode, with card rows)
+  - the request list (`TimeOffTab` in `compact` mode, with card rows). Lunch, Meeting and Unavailable save straight onto the schedule ("Add to my schedule", `SELF_SERVE_TYPES` in `StaffPage.jsx`); other types are requests
+  - providers' Contracted hours card has **Request a change** (`MyHoursRequests` in `src/HoursChangeRequests.jsx`, reusing `ScheduleChangeForm` from `ManageDataPage.jsx` with `onSubmit`); admins decide in **Contracted hours requests** above Admin → Time off's tabs (`HoursRequestsAdmin`), counted in `PendingTimeOffContext`
 - **Admin** time off (`TimeOffManageTab` in `StaffPage.jsx`):
   - request cards with Approve/Deny and the effect on the balance
   - tabs Pending/Upcoming/Past/Denied/Balances, and a name filter. Balances (`src/TimeOffBalancesBoard.jsx`, `GET /time-off/balances/all`) lists every active employee's employment type, PTO (salaried only), UPTO used this year and pending hours; click a PTO balance to set a new total with an optional reason (recorded as an adjustment)
