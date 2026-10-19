@@ -11,7 +11,7 @@ const WARNING_TEXT = 'Chats are temporary and automatically deleted after 72 hou
 
 function resolveDisplayName(username, directoryMap, currentUser) {
   if (username === currentUser.username) {
-    return currentUser.preferredName || [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || currentUser.username;
+    return [currentUser.preferredName || currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || currentUser.username;
   }
   return directoryMap[username] || username;
 }

@@ -124,7 +124,7 @@ The backend is the sibling repo `../kidz-lounge-api`, a single AWS Lambda with P
 
 ## Conventions & gotchas
 
-- Staff display names: preferred name, then first + last, then username.
+- Staff display names: preferred name (or first name) + last name, then username (Oct 2026: a preferred name no longer shows on its own; API `displayNameFor`).
 - **Roles** (`src/roles.js`, mirroring the API's `lib/roles.js`): Staff, Reception, Admin, Developer. Use `canManage(user)` for admin-level work outside the Admin area (Reception included) and `canAdminister(user)` for the Admin area and time-off approvals. Never compare `user.role` to a string. Show roles with `roleLabel`. Case manager pickers use `caseManagerChoices` (no Developers).
 - **What's new pop-up** (`src/whatsNew.js`, `src/WhatsNewNotifier.jsx`): **off at every clinic for now** (Oct 15 2026: no items). Kieran's rules: only **new features**, never bug fixes unless he says so, and only for the **timeframe he gives** (`showFrom` / `showUntil`, clinic dates; nothing shows outside them or with no items). Shown once per person per browser after sign-in; to announce, add the items, set the dates and change `id`; run the wording by Kieran first. The manual screenshot tool hides it.
 - **Developers get no tasks from others and are hidden in Admin** (Oct 15 2026; `canBeAssignedTasks` / `showsStaffAccount` in `src/roles.js`): the task assignee pickers leave Developers out (people message them in chat; the API refuses too), and Admins / Reception don't see Developer cards or profiles in Admin (Developers still do). Developers are also left off the Credentials page.

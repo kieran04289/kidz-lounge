@@ -2751,7 +2751,7 @@ export default function ManageDataPage({ section: sectionProp, onSectionChange }
             <p style={{ fontSize: 13, color: '#9ca3af' }}>No staff accounts yet.</p>
           ) : (
             staff.map(s => {
-              const displayName = s.preferred_name || [s.first_name, s.last_name].filter(Boolean).join(' ');
+              const displayName = [s.preferred_name || s.first_name, s.last_name].filter(Boolean).join(' ');
               return (
                 <div key={s.id} style={{ ...rowStyle(), opacity: s.archived ? 0.55 : 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
