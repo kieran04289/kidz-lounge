@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { CENTER, SETTINGS, isOffsite, offsiteLocation, offsiteSetting, settingOfArea, roomOfArea, needsRoom, isOffGrid, isRepeating, saveSettingChange, areaAfterStatus, VIRTUAL, holdsRoom } from '../appointmentSetting';
+import { CENTER, SETTINGS, isOffsite, offsiteLocation, offsiteSetting, settingOfArea, roomOfArea, needsRoom, isOffGrid, saveSettingChange, areaAfterStatus, VIRTUAL, holdsRoom } from '../appointmentSetting';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { useIsMobile } from '../useIsMobile';
@@ -1146,18 +1146,17 @@ function CommentsThread({ table, recordId, comments, currentUser, onUpdated, isV
 // Quick setting menu opened from an appointment card (daily and weekly
 // grids) or the Unassigned list (Kieran, Oct 15 2026): Center / School /
 // Home first, then a room (or "Not set yet"), the school's name, or an
-// optional home location. On a repeating session it then asks "This and all
-// future" (first) or "Just this one". Calls onPick(area, allFuture).
+// optional home location. Always just this session, repeating or not
+// (Kieran, Oct 2026: a quick change is for that appointment only; "This & All
+// Future" is in the appointment window). Calls onPick(area, false).
 // Rendered by the caller inside its own portal + backdrop, at { top, left }.
 export function RoomPickerMenu({ apt, top, left, onPick, onClose }) {
   const current = apt.treatment_area || '';
   const [setting, setSetting] = useState(settingOfArea(current) || 'Center');
   const [location, setLocation] = useState(offsiteLocation(current));
-  const [pending, setPending] = useState(undefined); // an area waiting for "this / all future"
   const suggestions = useOffsiteLocationSuggestions(apt.patient_name, setting !== 'Center');
   const listId = `kl-offsite-suggestions-${apt.id || apt.series_id || 'new'}`;
-  const repeating = isRepeating(apt);
-  const pick = (area) => (repeating ? setPending(area) : onPick(area, false));
+  const pick = (area) => onPick(area, false);
   const itemStyle = (active) => ({
     padding: '7px 10px', fontSize: 13, borderRadius: 6, cursor: 'pointer',
     background: active ? '#f3f4f6' : 'transparent', color: '#374151',
@@ -1182,19 +1181,7 @@ export function RoomPickerMenu({ apt, top, left, onPick, onClose }) {
       data-kl-dropdown=""
       onKeyDown={e => { if (e.key === 'Escape') onClose(); }}
     >
-      {pending !== undefined ? (
-        <div>
-          <p style={{ margin: '2px 2px 8px', fontSize: 12.5, color: '#374151' }}>
-            <strong>{roomDisplayText(pending) || 'No setting'}</strong> for this repeating session:
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <button type="button" autoFocus onClick={() => onPick(pending, true)} style={btn(true)}>This and all future</button>
-            <button type="button" onClick={() => onPick(pending, false)} style={btn(false)}>Just this one</button>
-            <button type="button" onClick={() => setPending(undefined)} style={{ ...btn(false), border: 'none', color: '#6b7280' }}>Back</button>
-          </div>
-        </div>
-      ) : (
-        <>
+      <>
           <span style={smallLabel}>Setting</span>
           <div style={{ marginBottom: 8 }}><OffsiteSettingButtons value={setting} onChange={setSetting} size="small" /></div>
           {setting === 'Center' ? (
@@ -1241,8 +1228,7 @@ export function RoomPickerMenu({ apt, top, left, onPick, onClose }) {
               </div>
             </div>
           )}
-        </>
-      )}
+      </>
     </div>
   );
 }
