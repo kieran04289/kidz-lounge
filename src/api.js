@@ -193,6 +193,9 @@ export const api = {
   splitRecurringSeries: (id, body) => request(`/recurring-series/${id}/split`, { method: 'POST', body: JSON.stringify(body) }),
   purgeFutureRecurringExceptions: (id, fromDate) => request(`/recurring-series/${id}/purge-future-exceptions`, { method: 'PUT', body: JSON.stringify({ from_date: fromDate }) }),
   createRecurringException: (seriesId, record) => request(`/recurring-series/${seriesId}/exceptions`, { method: 'POST', body: JSON.stringify(record) }),
+  // "Okay outside my hours": { ok, note } (src/hoursOk.js).
+  setAppointmentHoursOk: (id, body) => request(`/appointments/${id}/hours-ok`, { method: 'PUT', body: JSON.stringify(body) }),
+  setSeriesHoursOk: (id, body) => request(`/recurring-series/${id}/hours-ok`, { method: 'PUT', body: JSON.stringify(body) }),
   markAppointmentDeleted: (id) => request(`/appointments/${id}/mark-deleted`, { method: 'PUT' }),
 
   appendAppointmentComment: (id, text) => request(`/appointments/${id}/comments`, { method: 'PUT', body: JSON.stringify({ action: 'append', text }) }),

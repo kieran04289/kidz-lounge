@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { seriesIdOf } from '../appointmentSetting';
 import { CENTER, SETTINGS, isOffsite, offsiteLocation, offsiteSetting, settingOfArea, roomOfArea, needsRoom, isOffGrid, saveSettingChange, areaAfterStatus, VIRTUAL, holdsRoom } from '../appointmentSetting';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
+import { hoursOkOf, canOkayHours, setHoursOk } from '../hoursOk';
 import { useIsMobile } from '../useIsMobile';
 import { MeetingAgendaEditor, MeetingAgendaPlaceholder } from '../MeetingAgenda';
 import { useStaffNames } from '../staffDirectory';
@@ -325,6 +327,9 @@ export function computeConflicts(appointments, oooRecords, contractedGaps = [], 
       list.push({ kind: 'closed', a: apt, closed, types: ['closed'] });
       return;
     }
+    // Okayed by the provider or an admin (src/hoursOk.js): outside their
+    // contracted hours on purpose, so not a conflict.
+    if (hoursOkOf(apt)) return;
     contractedGaps.forEach(gap => {
       if (gap.provider !== apt.provider) return;
       if (gap.date !== apt.appointment_date) return;
@@ -2141,6 +2146,15 @@ function ScheduleApp() {
                     >
                       Go to day
                     </button>
+                    {c.kind === 'contracted-gap' && canOkayHours(user, c.a.provider) && (
+                      <button
+                        onClick={async () => { try { await setHoursOk(c.a, true); } catch (err) { window.alert(err.message); } loadDayRef.current?.(); loadLookaheadConflicts(); }}
+                        title="It's outside the contracted hours on purpose. A repeating session is okayed for every week."
+                        style={{ fontSize: 12.5, fontWeight: 600, color: '#9A3412', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
+                      >
+                        Okay outside hours
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -2179,6 +2193,15 @@ function ScheduleApp() {
                   >
                     Review
                   </button>
+                  {c.kind === 'contracted-gap' && canOkayHours(user, c.a.provider) && (
+                    <button
+                      onClick={async () => { try { await setHoursOk(c.a, true); } catch (err) { window.alert(err.message); } loadDayRef.current?.(); loadLookaheadConflicts(); }}
+                      title="It's outside the contracted hours on purpose. A repeating session is okayed for every week."
+                      style={{ fontSize: 12.5, fontWeight: 600, color: '#991b1b', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
+                    >
+                      Okay outside hours
+                    </button>
+                  )}
                   <button
                     onClick={() => setDismissedConflictKeys(prev => new Set(prev).add(getConflictKey(c)))}
                     style={{ fontSize: 12.5, fontWeight: 600, color: '#991b1b', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
@@ -2592,6 +2615,7 @@ function modalBtnStyle(primary, danger) {
 
 export function AppointmentModal({ providers, existing, defaultDate, prefill, onClose, onSaved, onCommentsSynced }) {
   const { user } = useAuth();
+  const nameFor = useStaffNames();
   const patientAlertsMap = usePatientAlerts();
   const navigate = useNavigate();
   // prefill.patientName: booking straight from the waitlist.
@@ -2683,6 +2707,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
       appointment_time: appointmentTime,
       duration: Number(duration),
       treatment_area: areaAfterStatus(status, treatmentArea),
+      ...hoursOkBody,
       appointment_status: status,
       cancel_reason: reasonToSave,
       ...absenceField,
@@ -2739,6 +2764,46 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
 
     return () => { cancelled = true; clearTimeout(timer); };
   }, [appointmentDate, appointmentTime, duration, patientSearch, patientConfirmed, treatmentArea, existing, status]);
+
+  // Outside the provider's contracted hours (Kieran, Oct 2026)? Such a session
+  // is a conflict until the provider or an Admin okays it (src/hoursOk.js);
+  // they can tick the okay right here, and it's saved with the session.
+  // A *HOLD* or Canceled session isn't happening, so it's never asked.
+  const hoursCheckKey = provider && appointmentDate && appointmentTime && duration && status !== HOLD_STATUS && status !== 'Canceled'
+    ? [provider, appointmentDate, appointmentTime, duration].join('|') : null;
+  const [hoursCheck, setHoursCheck] = useState({ key: null, outside: false });
+  useEffect(() => {
+    if (!hoursCheckKey) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      api.getProviderContractedGaps(provider, appointmentDate, appointmentDate)
+        .then(days => {
+          if (cancelled) return;
+          const r = getAppointmentTimeRange({ appointment_time: appointmentTime, duration });
+          const outside = (days || []).flatMap(d => d.gaps || [])
+            .some(g => r.start < timeToMinutes(g.end_time.slice(0, 5)) && timeToMinutes(g.start_time.slice(0, 5)) < r.end);
+          setHoursCheck({ key: hoursCheckKey, outside });
+        })
+        .catch(() => {});
+    }, 350);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [hoursCheckKey, provider, appointmentDate, appointmentTime, duration]);
+  const outsideContract = !!hoursCheckKey && hoursCheck.key === hoursCheckKey && hoursCheck.outside;
+  const [hoursOkTick, setHoursOkTick] = useState(false);
+  const [hoursOkNote, setHoursOkNote] = useState('');
+  const [hoursOkTakenBack, setHoursOkTakenBack] = useState(false);
+  // The okay this session already has, as it would stand after this save
+  // (a changed date, time, length or provider no longer counts).
+  const currentHoursOk = existing && !hoursOkTakenBack
+    ? hoursOkOf({ ...existing, provider, appointment_date: appointmentDate, appointment_time: appointmentTime, duration: Number(duration) })
+    : null;
+  const mayOkayHours = canOkayHours(user, provider);
+  // Sent with every save from this window; the server okays the saved row
+  // (and its series, for a repeating session).
+  const hoursOkBody = outsideContract && !currentHoursOk && hoursOkTick && mayOkayHours ? { hours_ok: { note: hoursOkNote } } : {};
+  const takeBackHoursOk = async () => {
+    try { await setHoursOk(existing, false); setHoursOkTakenBack(true); } catch (err) { setError(err.message); }
+  };
 
   const handleStatusSelect = (newStatus) => {
     setStatus(newStatus);
@@ -2805,6 +2870,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
         appointment_time: appointmentTime,
         duration: Number(duration),
         treatment_area: areaAfterStatus(status, treatmentArea),
+        ...hoursOkBody,
         appointment_status: status,
       cancel_reason: reasonToSave,
       ...absenceField,
@@ -2843,6 +2909,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
                 appointment_time: appointmentTime,
                 duration: Number(duration),
                 treatment_area: areaAfterStatus(status, treatmentArea),
+                ...hoursOkBody,
                 appointment_status: status,
       cancel_reason: reasonToSave,
       ...absenceField,
@@ -2914,6 +2981,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
           appointment_time: appointmentTime,
           duration: Number(duration),
           treatment_area: areaAfterStatus(status, treatmentArea),
+          ...hoursOkBody,
           appointment_status: 'Scheduled',
           start_date: appointmentDate,
         });
@@ -2949,6 +3017,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
         appointment_time: appointmentTime,
         duration: Number(duration),
         treatment_area: areaAfterStatus(status, treatmentArea),
+        ...hoursOkBody,
         appointment_status: status,
       cancel_reason: reasonToSave,
       ...absenceField,
@@ -3061,6 +3130,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
           treatment_area: pendingEditRecord.treatment_area,
           appointment_status: pendingEditRecord.appointment_status,
           start_date: pendingEditRecord.appointment_date,
+          ...(pendingEditRecord.hours_ok ? { hours_ok: pendingEditRecord.hours_ok } : {}),
         });
       } else {
         const targets = [{ id: existing.id, appointment_date: pendingEditRecord.appointment_date }, ...futureMatches.map(m => ({ id: m.id, appointment_date: m.appointment_date }))];
@@ -3369,6 +3439,47 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
               />
             )}
 
+            {outsideContract && (
+              <div style={{ background: currentHoursOk ? '#F4F4F5' : '#FEF3C7', border: `1px solid ${currentHoursOk ? '#E4E4E7' : '#FCD34D'}`, borderRadius: 6, padding: '9px 12px', marginBottom: 14 }}>
+                {currentHoursOk ? (
+                  <>
+                    <p style={{ fontSize: 12.5, color: '#3F3F46', margin: 0 }}>
+                      Outside {provider}'s contracted hours, okayed by {nameFor(currentHoursOk.by)}{currentHoursOk.at ? ` on ${new Date(currentHoursOk.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}.
+                    </p>
+                    {currentHoursOk.note && <p style={{ fontSize: 12, color: '#52525B', margin: '2px 0 0' }}><Linkify text={currentHoursOk.note} /></p>}
+                    {mayOkayHours && (
+                      <button type="button" onClick={takeBackHoursOk} style={{ marginTop: 4, padding: 0, border: 'none', background: 'none', color: 'var(--brand-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                        Take back the okay
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 12.5, fontWeight: 700, color: '#92400E', margin: '0 0 4px' }}>Outside {provider}'s contracted hours</p>
+                    {mayOkayHours ? (
+                      <>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#92400E', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={hoursOkTick} onChange={e => setHoursOkTick(e.target.checked)} />
+                          Okay it{user?.providerName === provider ? ' (outside my hours on purpose)' : ''}{seriesIdOf(existing) || repeatWeekly ? ', for every week' : ''}
+                        </label>
+                        {hoursOkTick && (
+                          <input
+                            value={hoursOkNote}
+                            onChange={e => setHoursOkNote(e.target.value)}
+                            maxLength={500}
+                            placeholder="Note (optional), e.g. family can only do 6 PM"
+                            aria-label="Note for okaying outside contracted hours"
+                            style={{ ...inputStyle(), marginTop: 6, marginBottom: 0 }}
+                          />
+                        )}
+                      </>
+                    ) : (
+                      <p style={{ fontSize: 12, color: '#92400E', margin: 0 }}>It shows as a conflict until {provider} or an admin okays it.</p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             {liveConflicts.length > 0 && (
               <div style={{ background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 6, padding: '9px 12px', marginBottom: 14 }}>
                 <p style={{ fontSize: 12.5, fontWeight: 700, color: '#92400E', margin: '0 0 4px' }}>Possible scheduling conflict</p>
