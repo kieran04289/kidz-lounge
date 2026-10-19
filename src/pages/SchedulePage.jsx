@@ -2613,6 +2613,34 @@ function modalBtnStyle(primary, danger) {
   };
 }
 
+// The appointment window's "Okay it?" answer (Kieran, Oct 2026: a check and
+// an x instead of a tickbox). Square, tinted green / red when picked; picking
+// the picked one again clears it.
+function OkayChoice({ kind, selected, onClick }) {
+  const yes = kind === 'yes';
+  const tone = yes ? { fg: '#067647', bg: '#ECFDF3', border: '#6CE9A6' } : { fg: '#B42318', bg: '#FEF3F2', border: '#FDA29B' };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      aria-label={yes ? 'Okay it' : 'Not okay, leave it flagged'}
+      title={yes ? 'Okay it' : 'Not okay, leave it flagged'}
+      style={{
+        width: 32, height: 32, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        borderRadius: 6, cursor: 'pointer',
+        border: `1px solid ${selected ? tone.border : '#E4E4E7'}`,
+        background: selected ? tone.bg : 'white',
+        color: selected ? tone.fg : '#A1A1AA',
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {yes ? <path d="M3.5 8.5l3 3 6-7" /> : <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />}
+      </svg>
+    </button>
+  );
+}
+
 export function AppointmentModal({ providers, existing, defaultDate, prefill, onClose, onSaved, onCommentsSynced }) {
   const { user } = useAuth();
   const nameFor = useStaffNames();
@@ -2789,7 +2817,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
     return () => { cancelled = true; clearTimeout(timer); };
   }, [hoursCheckKey, provider, appointmentDate, appointmentTime, duration]);
   const outsideContract = !!hoursCheckKey && hoursCheck.key === hoursCheckKey && hoursCheck.outside;
-  const [hoursOkTick, setHoursOkTick] = useState(false);
+  const [hoursOkTick, setHoursOkTick] = useState(null); // true = okay, false = leave flagged, null = not picked
   const [hoursOkNote, setHoursOkNote] = useState('');
   const [hoursOkTakenBack, setHoursOkTakenBack] = useState(false);
   // The okay this session already has, as it would stand after this save
@@ -2800,7 +2828,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
   const mayOkayHours = canOkayHours(user, provider);
   // Sent with every save from this window; the server okays the saved row
   // (and its series, for a repeating session).
-  const hoursOkBody = outsideContract && !currentHoursOk && hoursOkTick && mayOkayHours ? { hours_ok: { note: hoursOkNote } } : {};
+  const hoursOkBody = outsideContract && !currentHoursOk && hoursOkTick === true && mayOkayHours ? { hours_ok: { note: hoursOkNote } } : {};
   const takeBackHoursOk = async () => {
     try { await setHoursOk(existing, false); setHoursOkTakenBack(true); } catch (err) { setError(err.message); }
   };
@@ -3440,7 +3468,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
             )}
 
             {outsideContract && (
-              <div style={{ background: currentHoursOk ? '#F4F4F5' : '#FEF3C7', border: `1px solid ${currentHoursOk ? '#E4E4E7' : '#FCD34D'}`, borderRadius: 6, padding: '9px 12px', marginBottom: 14 }}>
+              <div style={{ background: currentHoursOk ? 'var(--brand-wash)' : 'var(--brand-tint)', border: `1px solid ${currentHoursOk ? 'var(--brand-border)' : 'var(--brand-tint2)'}`, borderRadius: 6, padding: '9px 12px', marginBottom: 14 }}>
                 {currentHoursOk ? (
                   <>
                     <p style={{ fontSize: 12.5, color: '#3F3F46', margin: 0 }}>
@@ -3455,14 +3483,19 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
                   </>
                 ) : (
                   <>
-                    <p style={{ fontSize: 12.5, fontWeight: 700, color: '#92400E', margin: '0 0 4px' }}>Outside {provider}'s contracted hours</p>
+                    <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--brand-primary-strong)', margin: '0 0 4px' }}>Outside {provider}'s contracted hours</p>
                     {mayOkayHours ? (
                       <>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#92400E', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={hoursOkTick} onChange={e => setHoursOkTick(e.target.checked)} />
-                          Okay it{user?.providerName === provider ? ' (outside my hours on purpose)' : ''}{seriesIdOf(existing) || repeatWeekly ? ', for every week' : ''}
-                        </label>
-                        {hoursOkTick && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                          <span style={{ fontSize: 12.5, color: 'var(--brand-ink)' }}>
+                            Okay it{user?.providerName === provider ? ' (outside my hours on purpose)' : ''}{seriesIdOf(existing) || repeatWeekly ? ', for every week' : ''}?
+                          </span>
+                          <div role="group" aria-label="Okay outside contracted hours" style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                            <OkayChoice kind="yes" selected={hoursOkTick === true} onClick={() => setHoursOkTick(hoursOkTick === true ? null : true)} />
+                            <OkayChoice kind="no" selected={hoursOkTick === false} onClick={() => setHoursOkTick(hoursOkTick === false ? null : false)} />
+                          </div>
+                        </div>
+                        {hoursOkTick === true && (
                           <input
                             value={hoursOkNote}
                             onChange={e => setHoursOkNote(e.target.value)}
@@ -3474,7 +3507,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
                         )}
                       </>
                     ) : (
-                      <p style={{ fontSize: 12, color: '#92400E', margin: 0 }}>It shows as a conflict until {provider} or an admin okays it.</p>
+                      <p style={{ fontSize: 12, color: 'var(--brand-muted)', margin: 0 }}>It shows as a conflict until {provider} or an admin okays it.</p>
                     )}
                   </>
                 )}

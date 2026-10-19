@@ -130,7 +130,7 @@ The orange bar under the specialty buttons counts problems in the next two weeks
 
 Click a conflict to open the appointments involved and fix one. If a conflict is intentional, click **Dismiss** to hide it. The restore button brings dismissed conflicts back.
 
-**Outside contracted hours on purpose:** the provider or an admin can click **Okay outside hours** on the conflict, or tick **Okay it** in the appointment window (with an optional note). The conflict goes away for everyone. A repeating session is okayed for every week. Moving the session to another date, time, length or provider takes the okay away, so the new time gets checked again. The appointment window shows who okayed it, with **Take back the okay**.
+**Outside contracted hours on purpose:** the provider or an admin can click **Okay outside hours** on the conflict, or click the ✓ beside **Okay it?** in the appointment window (with an optional note). The conflict goes away for everyone. A repeating session is okayed for every week. Moving the session to another date, time, length or provider takes the okay away, so the new time gets checked again. The appointment window shows who okayed it, with **Take back the okay**.
 
 Sessions with the **\*HOLD\*** status never show conflicts, because they aren't happening.
 <!-- end -->
