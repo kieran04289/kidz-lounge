@@ -16,8 +16,25 @@ import { INK, MUTED, HAIRLINE, NUMERIC, TONES, buttonStyle } from '../uiTokens';
 // Programs that aren't insurance; anything else is an insurer (shown as "INS").
 const NON_INSURANCE_PROGRAMS = new Set(['EI', 'CPSE', 'CSE', 'DOE', 'P', 'PP', 'NONE', 'PRIVATE PAY']);
 
+// The list's filters are remembered for a while (Kieran, Oct 2026: build
+// "EI, care team contains Heather" once, open a chart, come back to it).
+// Kept in sessionStorage, per person: closing the tab -- which signs you out
+// -- forgets them, and so does leaving them alone for FILTER_MEMORY_MINUTES.
+const FILTER_MEMORY_MINUTES = 30;
+const filterMemoryKey = (username) => `kl.patients.filters.${username || ''}`;
+function readFilterMemory(username) {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(filterMemoryKey(username)) || 'null');
+    if (!saved || Date.now() - saved.savedAt > FILTER_MEMORY_MINUTES * 60 * 1000) return null;
+    return saved;
+  } catch {
+    return null;
+  }
+}
+
 export default function PatientsPage() {
   const { user } = useAuth();
+  const [remembered] = useState(() => readFilterMemory(user?.username));
   const isAdmin = canManage(user);
   const isMobile = useIsMobile(768);
   const navigate = useNavigate();
@@ -25,16 +42,24 @@ export default function PatientsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [modalTarget, setModalTarget] = useState(null); // { existing: obj|null } | null
-  const [preset, setPreset] = useState('all');
-  const [searchText, setSearchText] = useState('');
+  const [preset, setPreset] = useState(remembered?.preset || 'all');
+  const [searchText, setSearchText] = useState(remembered?.searchText || '');
   // Same filters as the Data Table: any number, AND-ed; set-value columns
   // take several exact values (e.g. Program: P or PP or CPSE).
-  const [filters, setFilters] = useState([]);
+  const [filters, setFilters] = useState(Array.isArray(remembered?.filters) ? remembered.filters : []);
   const [showDataTable, setShowDataTable] = useState(false);
   const [confirmingDataTablePassword, setConfirmingDataTablePassword] = useState(false);
   const [dataTablePassword, setDataTablePassword] = useState(null);
   const [staffDirectory, setStaffDirectory] = useState([]);
-  const [showAllPatients, setShowAllPatients] = useState(false);
+  const [showAllPatients, setShowAllPatients] = useState(!!remembered?.showAllPatients);
+  // Each change restarts the clock; nothing set means nothing to remember.
+  useEffect(() => {
+    try {
+      const key = filterMemoryKey(user?.username);
+      if (preset === 'all' && !searchText && filters.length === 0 && !showAllPatients) sessionStorage.removeItem(key);
+      else sessionStorage.setItem(key, JSON.stringify({ preset, searchText, filters, showAllPatients, savedAt: Date.now() }));
+    } catch { /* storage full or blocked: just don't remember */ }
+  }, [preset, searchText, filters, showAllPatients, user?.username]);
 
   useEffect(() => { api.getStaffDirectory().then(setStaffDirectory).catch(() => {}); }, []);
 
