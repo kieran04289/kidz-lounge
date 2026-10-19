@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
+import { canOkayHours, setHoursOk } from '../hoursOk';
 import { useIsMobile } from '../useIsMobile';
 import {
   BRAND, BRAND_SERIF, TIME_SLOTS, ROW_HEIGHT, CARD_MARGIN, STATUS_OPTIONS,
@@ -267,6 +268,8 @@ export default function WeeklySchedulePage() {
     const interval = setInterval(loadLookaheadConflicts, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [gridReady, loadLookaheadConflicts]);
+  // After "Okay outside hours": the week and the two-week lookahead both drop it.
+  const refreshAfterOkay = () => { load({ background: true }); loadLookaheadConflicts(); };
 
   const grid = useMemo(() => {
     const g = {};
@@ -554,6 +557,15 @@ export default function WeeklySchedulePage() {
                     >
                       Review
                     </button>
+                    {c.kind === 'contracted-gap' && canOkayHours(user, c.a.provider) && (
+                      <button
+                        onClick={async () => { try { await setHoursOk(c.a, true); } catch (err) { window.alert(err.message); } refreshAfterOkay(); }}
+                        title="It's outside the contracted hours on purpose. A repeating session is okayed for every week."
+                        style={{ fontSize: 12.5, fontWeight: 600, color: '#9A3412', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
+                      >
+                        Okay outside hours
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -601,6 +613,15 @@ export default function WeeklySchedulePage() {
                     >
                       Review
                     </button>
+                    {c.kind === 'contracted-gap' && canOkayHours(user, c.a.provider) && (
+                      <button
+                        onClick={async () => { try { await setHoursOk(c.a, true); } catch (err) { window.alert(err.message); } refreshAfterOkay(); }}
+                        title="It's outside the contracted hours on purpose. A repeating session is okayed for every week."
+                        style={{ fontSize: 12.5, fontWeight: 600, color: '#9A3412', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
+                      >
+                        Okay outside hours
+                      </button>
+                    )}
                   </div>
                 );
               })}

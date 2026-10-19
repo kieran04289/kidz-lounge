@@ -1,6 +1,6 @@
 ## Time off approvals and balances
 
-The **Time off** tab in Admin covers everyone's requests and balances. The number beside it counts requests waiting for approval.
+The **Time off** tab in Admin covers everyone's requests and balances. The number beside it counts requests waiting for approval, contracted hours requests included.
 
 ![Time off requests waiting for approval](../img/admin-time-off.png)
 
@@ -12,6 +12,15 @@ The **Pending** tab lists requests waiting for a decision. PTO requests show how
 - **Deny:** you can add a reason. The employee sees it.
 - **Edit:** change the dates or times first.
 - **Delete:** remove a request entirely.
+
+Lunch, meetings and unavailable time that staff add for themselves are approved automatically, so they never wait here.
+
+### Contracted hours requests
+
+When a provider asks for new contracted hours, **Contracted hours requests** appears above the tabs. Each request shows the provider's current hours crossed out beside the new ones, the start date (and end date for temporary hours) and their note.
+
+- **Approve:** the new hours are scheduled from the start date, as if you'd added the change on their profile's **Weekly schedule**. Edit or remove it there afterwards.
+- **Deny:** you can add a reason. The provider sees it.
 
 **Upcoming**, **Past** and **Denied** list the other requests. **Filter by name** shows one person. **All types** shows one kind of request, and **Sort** orders them by date (newest or oldest first) or by type. **Add time off** records time off for anyone, already approved.
 

@@ -386,8 +386,11 @@ function scheduleToDays(schedule) {
   return Object.fromEntries((schedule || []).map(r => [Number(r.weekday), { start_time: (r.start_time || '').slice(0, 5), end_time: (r.end_time || '').slice(0, 5) }]));
 }
 
-function ScheduleChangeForm({ providerName, existing, onDone, onCancel }) {
+// `onSubmit(record)`: a provider asking for new hours (src/HoursChangeRequests.jsx)
+// -- the same form, but sent for approval instead of saved, with a note box.
+export function ScheduleChangeForm({ providerName, existing, onDone, onCancel, onSubmit, submitLabel }) {
   const today = localToday();
+  const [notes, setNotes] = useState('');
   const [startDate, setStartDate] = useState(existing?.start_date || '');
   const [hasEnd, setHasEnd] = useState(!!existing?.end_date);
   const [endDate, setEndDate] = useState(existing?.end_date || '');
@@ -416,6 +419,7 @@ function ScheduleChangeForm({ providerName, existing, onDone, onCancel }) {
     };
     setSaving(true);
     try {
+      if (onSubmit) { await onSubmit({ ...record, notes }); return; }
       const res = existing ? await api.updateScheduleChange(existing.id, record) : await api.createScheduleChange(providerName, record);
       onDone(res.changes);
     } catch (err) {
@@ -446,9 +450,15 @@ function ScheduleChangeForm({ providerName, existing, onDone, onCancel }) {
         {' '}Unchecked days mean not contracted that day.
       </p>
       {days === null ? <p style={{ fontSize: 12.5, color: '#9ca3af' }}>Loading...</p> : <WeeklyHoursRows days={days} onChange={setDays} />}
+      {onSubmit && (
+        <div style={{ marginTop: 10 }}>
+          <label htmlFor="kl-change-notes" style={labelStyle()}>Note for the office (optional)</label>
+          <textarea id="kl-change-notes" rows={2} maxLength={2000} value={notes} onChange={e => setNotes(e.target.value)} style={{ ...inputStyle(), resize: 'vertical', fontFamily: 'inherit' }} />
+        </div>
+      )}
       {error && <p role="alert" style={{ color: '#dc2626', fontSize: 12.5, margin: '8px 0 0' }}>{error}</p>}
       <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-        <button type="button" onClick={save} disabled={saving || days === null} style={modalBtnStyle(true)}>{saving ? 'Saving...' : existing ? 'Save change' : 'Schedule change'}</button>
+        <button type="button" onClick={save} disabled={saving || days === null} style={modalBtnStyle(true)}>{saving ? 'Saving...' : submitLabel || (existing ? 'Save change' : 'Schedule change')}</button>
         <button type="button" onClick={onCancel} disabled={saving} style={modalBtnStyle()}>Cancel</button>
       </div>
     </div>
@@ -2741,7 +2751,7 @@ export default function ManageDataPage({ section: sectionProp, onSectionChange }
             <p style={{ fontSize: 13, color: '#9ca3af' }}>No staff accounts yet.</p>
           ) : (
             staff.map(s => {
-              const displayName = s.preferred_name || [s.first_name, s.last_name].filter(Boolean).join(' ');
+              const displayName = [s.preferred_name || s.first_name, s.last_name].filter(Boolean).join(' ');
               return (
                 <div key={s.id} style={{ ...rowStyle(), opacity: s.archived ? 0.55 : 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>

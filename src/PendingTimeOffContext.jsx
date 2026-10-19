@@ -4,7 +4,7 @@ import { api } from './api';
 import { useAuth } from './AuthContext';
 import { canAdminister } from './roles';
 
-// Holds the number of time-off requests waiting for an admin's decision.
+// Holds the number of time-off (and contracted hours) requests waiting for an admin's decision.
 // The nav bar (next to the username + on the ADMIN menu item) and the
 // ADMIN page's Time Off tab all read from here, so they always agree.
 // Non-admins always get 0 and we never call the admin-only endpoint for them.
@@ -18,8 +18,12 @@ export function PendingTimeOffProvider({ children }) {
 
   const refreshPending = useCallback(async () => {
     if (!isAdmin) { setPendingCount(0); return; }
-    const pending = await api.getAllTimeOffRequests('pending').catch(() => null);
-    if (pending) setPendingCount(pending.length);
+    // Time off plus contracted hours change requests: both wait in Admin → Time off.
+    const [pending, hours] = await Promise.all([
+      api.getAllTimeOffRequests('pending').catch(() => null),
+      api.getHoursChangeRequests('pending').catch(() => []),
+    ]);
+    if (pending) setPendingCount(pending.length + (hours || []).length);
   }, [isAdmin]);
 
   // Re-check when the admin signs in and whenever they move between pages,

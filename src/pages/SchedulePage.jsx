@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { CENTER, SETTINGS, isOffsite, offsiteLocation, offsiteSetting, settingOfArea, roomOfArea, needsRoom, isOffGrid, isRepeating, saveSettingChange, areaAfterStatus, VIRTUAL, holdsRoom } from '../appointmentSetting';
+import { seriesIdOf } from '../appointmentSetting';
+import { CENTER, SETTINGS, isOffsite, offsiteLocation, offsiteSetting, settingOfArea, roomOfArea, needsRoom, isOffGrid, saveSettingChange, areaAfterStatus, VIRTUAL, holdsRoom } from '../appointmentSetting';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
+import { hoursOkOf, canOkayHours, setHoursOk } from '../hoursOk';
 import { useIsMobile } from '../useIsMobile';
 import { MeetingAgendaEditor, MeetingAgendaPlaceholder } from '../MeetingAgenda';
 import { useStaffNames } from '../staffDirectory';
@@ -279,7 +281,10 @@ export function getConflictKey(c) {
 export function computeConflicts(appointments, oooRecords, contractedGaps = [], closedDates = []) {
   const list = [];
   const closedByDate = Object.fromEntries((closedDates || []).map(c => [c.date, c]));
-  const nonCanceled = appointments.filter(a => a.appointment_status !== 'Canceled');
+  // Canceled and *HOLD* sessions aren't happening (Kieran, Oct 2026: a held
+  // slot never conflicts), so they're left out of every check -- against
+  // each other, other sessions, time off, closures and contracted hours.
+  const nonCanceled = appointments.filter(a => a.appointment_status !== 'Canceled' && a.appointment_status !== HOLD_STATUS);
 
   for (let i = 0; i < nonCanceled.length; i++) {
     for (let j = i + 1; j < nonCanceled.length; j++) {
@@ -322,6 +327,9 @@ export function computeConflicts(appointments, oooRecords, contractedGaps = [], 
       list.push({ kind: 'closed', a: apt, closed, types: ['closed'] });
       return;
     }
+    // Okayed by the provider or an admin (src/hoursOk.js): outside their
+    // contracted hours on purpose, so not a conflict.
+    if (hoursOkOf(apt)) return;
     contractedGaps.forEach(gap => {
       if (gap.provider !== apt.provider) return;
       if (gap.date !== apt.appointment_date) return;
@@ -1143,18 +1151,17 @@ function CommentsThread({ table, recordId, comments, currentUser, onUpdated, isV
 // Quick setting menu opened from an appointment card (daily and weekly
 // grids) or the Unassigned list (Kieran, Oct 15 2026): Center / School /
 // Home first, then a room (or "Not set yet"), the school's name, or an
-// optional home location. On a repeating session it then asks "This and all
-// future" (first) or "Just this one". Calls onPick(area, allFuture).
+// optional home location. Always just this session, repeating or not
+// (Kieran, Oct 2026: a quick change is for that appointment only; "This & All
+// Future" is in the appointment window). Calls onPick(area, false).
 // Rendered by the caller inside its own portal + backdrop, at { top, left }.
 export function RoomPickerMenu({ apt, top, left, onPick, onClose }) {
   const current = apt.treatment_area || '';
   const [setting, setSetting] = useState(settingOfArea(current) || 'Center');
   const [location, setLocation] = useState(offsiteLocation(current));
-  const [pending, setPending] = useState(undefined); // an area waiting for "this / all future"
   const suggestions = useOffsiteLocationSuggestions(apt.patient_name, setting !== 'Center');
   const listId = `kl-offsite-suggestions-${apt.id || apt.series_id || 'new'}`;
-  const repeating = isRepeating(apt);
-  const pick = (area) => (repeating ? setPending(area) : onPick(area, false));
+  const pick = (area) => onPick(area, false);
   const itemStyle = (active) => ({
     padding: '7px 10px', fontSize: 13, borderRadius: 6, cursor: 'pointer',
     background: active ? '#f3f4f6' : 'transparent', color: '#374151',
@@ -1179,19 +1186,7 @@ export function RoomPickerMenu({ apt, top, left, onPick, onClose }) {
       data-kl-dropdown=""
       onKeyDown={e => { if (e.key === 'Escape') onClose(); }}
     >
-      {pending !== undefined ? (
-        <div>
-          <p style={{ margin: '2px 2px 8px', fontSize: 12.5, color: '#374151' }}>
-            <strong>{roomDisplayText(pending) || 'No setting'}</strong> for this repeating session:
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <button type="button" autoFocus onClick={() => onPick(pending, true)} style={btn(true)}>This and all future</button>
-            <button type="button" onClick={() => onPick(pending, false)} style={btn(false)}>Just this one</button>
-            <button type="button" onClick={() => setPending(undefined)} style={{ ...btn(false), border: 'none', color: '#6b7280' }}>Back</button>
-          </div>
-        </div>
-      ) : (
-        <>
+      <>
           <span style={smallLabel}>Setting</span>
           <div style={{ marginBottom: 8 }}><OffsiteSettingButtons value={setting} onChange={setSetting} size="small" /></div>
           {setting === 'Center' ? (
@@ -1238,8 +1233,7 @@ export function RoomPickerMenu({ apt, top, left, onPick, onClose }) {
               </div>
             </div>
           )}
-        </>
-      )}
+      </>
     </div>
   );
 }
@@ -2152,6 +2146,15 @@ function ScheduleApp() {
                     >
                       Go to day
                     </button>
+                    {c.kind === 'contracted-gap' && canOkayHours(user, c.a.provider) && (
+                      <button
+                        onClick={async () => { try { await setHoursOk(c.a, true); } catch (err) { window.alert(err.message); } loadDayRef.current?.(); loadLookaheadConflicts(); }}
+                        title="It's outside the contracted hours on purpose. A repeating session is okayed for every week."
+                        style={{ fontSize: 12.5, fontWeight: 600, color: '#9A3412', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
+                      >
+                        Okay outside hours
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -2190,6 +2193,15 @@ function ScheduleApp() {
                   >
                     Review
                   </button>
+                  {c.kind === 'contracted-gap' && canOkayHours(user, c.a.provider) && (
+                    <button
+                      onClick={async () => { try { await setHoursOk(c.a, true); } catch (err) { window.alert(err.message); } loadDayRef.current?.(); loadLookaheadConflicts(); }}
+                      title="It's outside the contracted hours on purpose. A repeating session is okayed for every week."
+                      style={{ fontSize: 12.5, fontWeight: 600, color: '#991b1b', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
+                    >
+                      Okay outside hours
+                    </button>
+                  )}
                   <button
                     onClick={() => setDismissedConflictKeys(prev => new Set(prev).add(getConflictKey(c)))}
                     style={{ fontSize: 12.5, fontWeight: 600, color: '#991b1b', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
@@ -2601,8 +2613,37 @@ function modalBtnStyle(primary, danger) {
   };
 }
 
+// The appointment window's "Okay it?" answer (Kieran, Oct 2026: a check and
+// an x instead of a tickbox). Square, tinted green / red when picked; picking
+// the picked one again clears it.
+function OkayChoice({ kind, selected, onClick }) {
+  const yes = kind === 'yes';
+  const tone = yes ? { fg: '#067647', bg: '#ECFDF3', border: '#6CE9A6' } : { fg: '#B42318', bg: '#FEF3F2', border: '#FDA29B' };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      aria-label={yes ? 'Okay it' : 'Not okay, leave it flagged'}
+      title={yes ? 'Okay it' : 'Not okay, leave it flagged'}
+      style={{
+        width: 32, height: 32, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        borderRadius: 6, cursor: 'pointer',
+        border: `1px solid ${selected ? tone.border : '#E4E4E7'}`,
+        background: selected ? tone.bg : 'white',
+        color: selected ? tone.fg : '#A1A1AA',
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {yes ? <path d="M3.5 8.5l3 3 6-7" /> : <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />}
+      </svg>
+    </button>
+  );
+}
+
 export function AppointmentModal({ providers, existing, defaultDate, prefill, onClose, onSaved, onCommentsSynced }) {
   const { user } = useAuth();
+  const nameFor = useStaffNames();
   const patientAlertsMap = usePatientAlerts();
   const navigate = useNavigate();
   // prefill.patientName: booking straight from the waitlist.
@@ -2694,6 +2735,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
       appointment_time: appointmentTime,
       duration: Number(duration),
       treatment_area: areaAfterStatus(status, treatmentArea),
+      ...hoursOkBody,
       appointment_status: status,
       cancel_reason: reasonToSave,
       ...absenceField,
@@ -2719,6 +2761,8 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
   useEffect(() => {
     if (!appointmentDate || !appointmentTime || !duration) { setLiveConflicts([]); return; }
     if (!patientConfirmed && (!treatmentArea || isOffsite(treatmentArea))) { setLiveConflicts([]); return; }
+    // A *HOLD* session isn't happening, so it can't clash with anything.
+    if (status === HOLD_STATUS) { setLiveConflicts([]); return; }
 
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -2728,7 +2772,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
         const draftRange = getAppointmentTimeRange({ appointment_time: appointmentTime, duration });
         const found = [];
         (dayAppointments || []).forEach(apt => {
-          if (apt.appointment_status === 'Canceled') return;
+          if (apt.appointment_status === 'Canceled' || apt.appointment_status === HOLD_STATUS) return;
           if (existing && apt.id === existing.id) return; // never flag against itself when editing
           const range = getAppointmentTimeRange(apt);
           const overlaps = draftRange.start < range.end && range.start < draftRange.end;
@@ -2747,7 +2791,47 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
     }, 350); // small debounce so it doesn't fire on every keystroke
 
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [appointmentDate, appointmentTime, duration, patientSearch, patientConfirmed, treatmentArea, existing]);
+  }, [appointmentDate, appointmentTime, duration, patientSearch, patientConfirmed, treatmentArea, existing, status]);
+
+  // Outside the provider's contracted hours (Kieran, Oct 2026)? Such a session
+  // is a conflict until the provider or an Admin okays it (src/hoursOk.js);
+  // they can tick the okay right here, and it's saved with the session.
+  // A *HOLD* or Canceled session isn't happening, so it's never asked.
+  const hoursCheckKey = provider && appointmentDate && appointmentTime && duration && status !== HOLD_STATUS && status !== 'Canceled'
+    ? [provider, appointmentDate, appointmentTime, duration].join('|') : null;
+  const [hoursCheck, setHoursCheck] = useState({ key: null, outside: false });
+  useEffect(() => {
+    if (!hoursCheckKey) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      api.getProviderContractedGaps(provider, appointmentDate, appointmentDate)
+        .then(days => {
+          if (cancelled) return;
+          const r = getAppointmentTimeRange({ appointment_time: appointmentTime, duration });
+          const outside = (days || []).flatMap(d => d.gaps || [])
+            .some(g => r.start < timeToMinutes(g.end_time.slice(0, 5)) && timeToMinutes(g.start_time.slice(0, 5)) < r.end);
+          setHoursCheck({ key: hoursCheckKey, outside });
+        })
+        .catch(() => {});
+    }, 350);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [hoursCheckKey, provider, appointmentDate, appointmentTime, duration]);
+  const outsideContract = !!hoursCheckKey && hoursCheck.key === hoursCheckKey && hoursCheck.outside;
+  const [hoursOkTick, setHoursOkTick] = useState(null); // true = okay, false = leave flagged, null = not picked
+  const [hoursOkNote, setHoursOkNote] = useState('');
+  const [hoursOkTakenBack, setHoursOkTakenBack] = useState(false);
+  // The okay this session already has, as it would stand after this save
+  // (a changed date, time, length or provider no longer counts).
+  const currentHoursOk = existing && !hoursOkTakenBack
+    ? hoursOkOf({ ...existing, provider, appointment_date: appointmentDate, appointment_time: appointmentTime, duration: Number(duration) })
+    : null;
+  const mayOkayHours = canOkayHours(user, provider);
+  // Sent with every save from this window; the server okays the saved row
+  // (and its series, for a repeating session).
+  const hoursOkBody = outsideContract && !currentHoursOk && hoursOkTick === true && mayOkayHours ? { hours_ok: { note: hoursOkNote } } : {};
+  const takeBackHoursOk = async () => {
+    try { await setHoursOk(existing, false); setHoursOkTakenBack(true); } catch (err) { setError(err.message); }
+  };
 
   const handleStatusSelect = (newStatus) => {
     setStatus(newStatus);
@@ -2814,6 +2898,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
         appointment_time: appointmentTime,
         duration: Number(duration),
         treatment_area: areaAfterStatus(status, treatmentArea),
+        ...hoursOkBody,
         appointment_status: status,
       cancel_reason: reasonToSave,
       ...absenceField,
@@ -2852,6 +2937,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
                 appointment_time: appointmentTime,
                 duration: Number(duration),
                 treatment_area: areaAfterStatus(status, treatmentArea),
+                ...hoursOkBody,
                 appointment_status: status,
       cancel_reason: reasonToSave,
       ...absenceField,
@@ -2923,6 +3009,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
           appointment_time: appointmentTime,
           duration: Number(duration),
           treatment_area: areaAfterStatus(status, treatmentArea),
+          ...hoursOkBody,
           appointment_status: 'Scheduled',
           start_date: appointmentDate,
         });
@@ -2958,6 +3045,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
         appointment_time: appointmentTime,
         duration: Number(duration),
         treatment_area: areaAfterStatus(status, treatmentArea),
+        ...hoursOkBody,
         appointment_status: status,
       cancel_reason: reasonToSave,
       ...absenceField,
@@ -3070,6 +3158,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
           treatment_area: pendingEditRecord.treatment_area,
           appointment_status: pendingEditRecord.appointment_status,
           start_date: pendingEditRecord.appointment_date,
+          ...(pendingEditRecord.hours_ok ? { hours_ok: pendingEditRecord.hours_ok } : {}),
         });
       } else {
         const targets = [{ id: existing.id, appointment_date: pendingEditRecord.appointment_date }, ...futureMatches.map(m => ({ id: m.id, appointment_date: m.appointment_date }))];
@@ -3378,6 +3467,52 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
               />
             )}
 
+            {outsideContract && (
+              <div style={{ background: currentHoursOk ? 'var(--brand-wash)' : 'var(--brand-tint)', border: `1px solid ${currentHoursOk ? 'var(--brand-border)' : 'var(--brand-tint2)'}`, borderRadius: 6, padding: '9px 12px', marginBottom: 14 }}>
+                {currentHoursOk ? (
+                  <>
+                    <p style={{ fontSize: 12.5, color: '#3F3F46', margin: 0 }}>
+                      Outside {provider}'s contracted hours, okayed by {nameFor(currentHoursOk.by)}{currentHoursOk.at ? ` on ${new Date(currentHoursOk.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}.
+                    </p>
+                    {currentHoursOk.note && <p style={{ fontSize: 12, color: '#52525B', margin: '2px 0 0' }}><Linkify text={currentHoursOk.note} /></p>}
+                    {mayOkayHours && (
+                      <button type="button" onClick={takeBackHoursOk} style={{ marginTop: 4, padding: 0, border: 'none', background: 'none', color: 'var(--brand-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                        Take back the okay
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--brand-primary-strong)', margin: '0 0 4px' }}>Outside {provider}'s contracted hours</p>
+                    {mayOkayHours ? (
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                          <span style={{ fontSize: 12.5, color: 'var(--brand-ink)' }}>
+                            Okay it{user?.providerName === provider ? ' (outside my hours on purpose)' : ''}{seriesIdOf(existing) || repeatWeekly ? ', for every week' : ''}?
+                          </span>
+                          <div role="group" aria-label="Okay outside contracted hours" style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                            <OkayChoice kind="yes" selected={hoursOkTick === true} onClick={() => setHoursOkTick(hoursOkTick === true ? null : true)} />
+                            <OkayChoice kind="no" selected={hoursOkTick === false} onClick={() => setHoursOkTick(hoursOkTick === false ? null : false)} />
+                          </div>
+                        </div>
+                        {hoursOkTick === true && (
+                          <input
+                            value={hoursOkNote}
+                            onChange={e => setHoursOkNote(e.target.value)}
+                            maxLength={500}
+                            placeholder="Note (optional), e.g. family can only do 6 PM"
+                            aria-label="Note for okaying outside contracted hours"
+                            style={{ ...inputStyle(), marginTop: 6, marginBottom: 0 }}
+                          />
+                        )}
+                      </>
+                    ) : (
+                      <p style={{ fontSize: 12, color: 'var(--brand-muted)', margin: 0 }}>It shows as a conflict until {provider} or an admin okays it.</p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             {liveConflicts.length > 0 && (
               <div style={{ background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 6, padding: '9px 12px', marginBottom: 14 }}>
                 <p style={{ fontSize: 12.5, fontWeight: 700, color: '#92400E', margin: '0 0 4px' }}>Possible scheduling conflict</p>

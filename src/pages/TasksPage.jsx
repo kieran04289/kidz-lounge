@@ -36,8 +36,9 @@ function isRecentlyCompleted(task) {
 }
 
 function staffDisplayName(s) {
-  if (s.preferred_name) return s.preferred_name;
-  if (s.first_name || s.last_name) return [s.first_name, s.last_name].filter(Boolean).join(' ');
+  // Preferred (or first) name + last name, like the API's displayNameFor.
+  const first = s.preferred_name || s.first_name;
+  if (first || s.last_name) return [first, s.last_name].filter(Boolean).join(' ');
   return s.username;
 }
 
