@@ -279,7 +279,10 @@ export function getConflictKey(c) {
 export function computeConflicts(appointments, oooRecords, contractedGaps = [], closedDates = []) {
   const list = [];
   const closedByDate = Object.fromEntries((closedDates || []).map(c => [c.date, c]));
-  const nonCanceled = appointments.filter(a => a.appointment_status !== 'Canceled');
+  // Canceled and *HOLD* sessions aren't happening (Kieran, Oct 2026: a held
+  // slot never conflicts), so they're left out of every check -- against
+  // each other, other sessions, time off, closures and contracted hours.
+  const nonCanceled = appointments.filter(a => a.appointment_status !== 'Canceled' && a.appointment_status !== HOLD_STATUS);
 
   for (let i = 0; i < nonCanceled.length; i++) {
     for (let j = i + 1; j < nonCanceled.length; j++) {
@@ -2719,6 +2722,8 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
   useEffect(() => {
     if (!appointmentDate || !appointmentTime || !duration) { setLiveConflicts([]); return; }
     if (!patientConfirmed && (!treatmentArea || isOffsite(treatmentArea))) { setLiveConflicts([]); return; }
+    // A *HOLD* session isn't happening, so it can't clash with anything.
+    if (status === HOLD_STATUS) { setLiveConflicts([]); return; }
 
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -2728,7 +2733,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
         const draftRange = getAppointmentTimeRange({ appointment_time: appointmentTime, duration });
         const found = [];
         (dayAppointments || []).forEach(apt => {
-          if (apt.appointment_status === 'Canceled') return;
+          if (apt.appointment_status === 'Canceled' || apt.appointment_status === HOLD_STATUS) return;
           if (existing && apt.id === existing.id) return; // never flag against itself when editing
           const range = getAppointmentTimeRange(apt);
           const overlaps = draftRange.start < range.end && range.start < draftRange.end;
@@ -2747,7 +2752,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
     }, 350); // small debounce so it doesn't fire on every keystroke
 
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [appointmentDate, appointmentTime, duration, patientSearch, patientConfirmed, treatmentArea, existing]);
+  }, [appointmentDate, appointmentTime, duration, patientSearch, patientConfirmed, treatmentArea, existing, status]);
 
   const handleStatusSelect = (newStatus) => {
     setStatus(newStatus);
