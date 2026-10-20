@@ -397,7 +397,9 @@ export function SessionNotePage() {
     setSaving(true);
     setSaveError(null);
     try {
-      const r = await api.saveSessionNote({ key, ...form });
+      // The first save records which note it was started from, so the
+      // line saying so stays until the note is signed.
+      const r = await api.saveSessionNote({ key, ...form, ...(!data.note && data.previous ? { prefilled_from: data.previous.session_date } : {}) });
       setData(d => ({ ...d, note: r.note, status: r.status, missing: r.missing }));
       setDirty(false);
       return r;
@@ -471,9 +473,9 @@ export function SessionNotePage() {
         )} />
 
         <Card pad={isMobile ? 14 : 20}>
-          {!note && data.previous && editable && (
+          {editable && (note ? note.prefilled_from : data.previous?.session_date) && (
             <p style={{ margin: '0 0 12px', fontSize: 13, color: MUTED }}>
-              Started from your note of {fmtDate(data.previous.session_date)}: who took part, delivery, working with the parent and strategies. Check them, then write what happened today.
+              Started from your note of {fmtDate(note ? note.prefilled_from : data.previous.session_date)}: who took part, delivery, working with the parent and strategies. Check them, then write what happened today.
             </p>
           )}
           {cancelled && (
