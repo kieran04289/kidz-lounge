@@ -154,7 +154,7 @@ export default function MyWorkPage() {
                 {(p.reports === null || p.reports?.length > 0) && (
                   <Section title="Reports to write" count={p.reports?.length}>
                     {p.reports && p.reports.map(x => (
-                      <Row key={`${x.href}-${x.text}`} severity={x.severity} main={x.patient_name} sub={x.text} date={x.date ? `due ${nice(x.date)}` : null}>
+                      <Row key={x.start ? `${x.start.patient_id}-${x.start.ifsp_id}-${x.start.service}` : `${x.href}-${x.text}`} severity={x.severity} main={x.patient_name} sub={x.text} date={x.date ? `due ${nice(x.date)}` : null}>
                         <button type="button" onClick={() => openReport(x)} style={buttonStyle('secondary', small)}>Open</button>
                       </Row>
                     ))}
