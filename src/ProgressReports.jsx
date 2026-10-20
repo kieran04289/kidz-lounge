@@ -291,7 +291,6 @@ export function ProgressReportPage() {
   return (
     <div style={{ background: PAGE_BG, fontFamily: FONT, minHeight: '100%' }}>
       <div style={{ maxWidth: 900, margin: '0 auto', padding: isMobile ? '18px 14px 60px' : '28px 28px 72px' }}>
-        <Link to="/progress-reports" style={{ fontSize: 13, color: 'var(--brand-primary)' }}>← Progress reports</Link>
         <PageHeader title={`${header.child_name} · ${TYPE_LABEL[report.report_type]} progress report`} isMobile={isMobile} actions={(
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <Tag tone={st.tone}>{st.text}</Tag>

@@ -422,12 +422,16 @@ function Sidebar({ tabs, activeTab, setActiveTab, onBack, onEdit }) {
     return (
       <div style={{ borderBottom: `1.5px solid ${BRAND.box}`, flexShrink: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px' }}>
+          {/* PedsDesk (Oct 2026): no back arrow; it didn't always lead where
+              you came from. The menu and search get you anywhere. */}
+          {GROUPED_CHART ? <span /> : (
           <button
             onClick={onBack}
             style={{ fontSize: 12.5, color: BRAND.muted, background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}
           >
             &larr; Back
           </button>
+          )}
           <button
             onClick={onEdit}
             style={{
@@ -1264,9 +1268,15 @@ export default function PatientChartPage() {
     return (
       <div style={{ padding: 40, fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
         <p style={{ fontSize: 13, color: BRAND.muted }}>No matching patient record found for "{name}".</p>
+        {GROUPED_CHART ? (
+          <button onClick={() => navigate('/patients')} style={{ fontSize: 13, color: BRAND.forest, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+            Go to Patients
+          </button>
+        ) : (
         <button onClick={() => navigate(-1)} style={{ fontSize: 13, color: BRAND.forest, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
           &larr; Back
         </button>
+        )}
       </div>
     );
   }

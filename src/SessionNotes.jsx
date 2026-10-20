@@ -462,7 +462,6 @@ export function SessionNotePage() {
   return (
     <div style={{ background: PAGE_BG, fontFamily: FONT, minHeight: '100%' }}>
       <div style={{ maxWidth: 860, margin: '0 auto', padding: isMobile ? '18px 14px 60px' : '28px 28px 72px' }}>
-        <Link to="/session-notes" style={{ fontSize: 13, color: 'var(--brand-primary)' }}>← Session notes</Link>
         <PageHeader title={`${h.child_name} · ${dayLabel(session.date)}`} isMobile={isMobile} actions={(
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <Tag tone={st.tone}>{st.text}</Tag>

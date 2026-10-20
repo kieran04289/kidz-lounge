@@ -24,6 +24,7 @@ import { EMPLOYMENT_TYPES, EMPLOYMENT_LABELS, EMPLOYMENT_HINTS, employmentLabel 
 import { CredentialsPanel } from '../MyProfilePage';
 import { ProviderEiCard } from '../../EiHubSetup';
 import { phoneDigits, formatPhone } from '../../phone';
+import { featureOn } from '../../brand';
 
 const SECTIONS = [
   { key: 'account', label: 'Account and role' },
@@ -781,7 +782,9 @@ export default function StaffProfilePage() {
     api.getAllTimeOffRequests('pending').then(p => setPendingCount(p.filter(r => r.username === username).length)).catch(() => {});
   }, [refreshPending, username]);
 
-  const back = (
+  // PedsDesk (Oct 2026): no back arrow (it didn't always lead where you came
+  // from); Admin is in the menu under your name.
+  const back = featureOn('ei') ? null : (
     <Link to="/admin" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: BRAND.brassText, textDecoration: 'none' }}>
       <span aria-hidden="true">&larr;</span> All staff
     </Link>

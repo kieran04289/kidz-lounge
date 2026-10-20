@@ -87,6 +87,15 @@ export default function MyWorkPage() {
 
   const p = data?.provider;
   const o = data?.office;
+  // A report not started yet is started (prefilled, as on the Reports page)
+  // and opened, so it's one click like a session note.
+  const openReport = async (x) => {
+    if (!x.start) { navigate(x.href); return; }
+    try {
+      const { id } = await api.startProgressReport(x.start);
+      navigate(`/progress-reports/${id}`);
+    } catch (err) { setError(err.message); }
+  };
   // Opens a chat with the provider (their existing one, or a new one) to
   // write in; nothing is sent for you.
   const { openConversation, refreshConversations } = useChat();
@@ -146,7 +155,7 @@ export default function MyWorkPage() {
                   <Section title="Reports to write" count={p.reports?.length}>
                     {p.reports && p.reports.map(x => (
                       <Row key={`${x.href}-${x.text}`} severity={x.severity} main={x.patient_name} sub={x.text} date={x.date ? `due ${nice(x.date)}` : null}>
-                        <button type="button" onClick={() => navigate(x.href)} style={buttonStyle('secondary', small)}>Open</button>
+                        <button type="button" onClick={() => openReport(x)} style={buttonStyle('secondary', small)}>Open</button>
                       </Row>
                     ))}
                   </Section>
