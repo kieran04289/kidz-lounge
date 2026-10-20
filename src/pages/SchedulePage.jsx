@@ -278,8 +278,9 @@ export function getConflictKey(c) {
 // scheduling directly on top of one gets flagged rather than passing
 // silently.
 // closedDates: [{ date, reason }] from /office-hours/closed-dates. Any
-// non-canceled appointment on a closed day is flagged ('closed'), and the
-// not-contracted check is skipped for it -- on a closed day that shading
+// non-canceled in-office appointment on a closed day is flagged ('closed'),
+// and the not-contracted check is skipped for it (School / Home sessions on
+// a closed day are fine and get the contracted-hours check instead) -- on a closed day that shading
 // isn't drawn, and flagging both would double-count one appointment.
 export function computeConflicts(appointments, oooRecords, contractedGaps = [], closedDates = []) {
   const list = [];
@@ -323,9 +324,11 @@ export function computeConflicts(appointments, oooRecords, contractedGaps = [], 
       if (!overlaps) return;
       list.push({ kind: 'ooo', a: apt, ooo, types: ['ooo'] });
     });
-    // Outside hours was removed (Kieran, Oct 15 2026): a session off the
-    // grid follows the same rules as any other.
-    const closed = closedByDate[apt.appointment_date];
+    // An office closure only concerns sessions in the office (Kieran, Oct
+    // 20 2026): a room, Center or Virtual. School and Home sessions can run
+    // on a closed day; they still get the contracted-hours check below,
+    // which the provider can okay as usual. (API: lib/cancelReason.js inOffice.)
+    const closed = !isOffsite(apt.treatment_area) ? closedByDate[apt.appointment_date] : null;
     if (closed) {
       list.push({ kind: 'closed', a: apt, closed, types: ['closed'] });
       return;
