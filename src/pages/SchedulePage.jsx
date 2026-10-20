@@ -24,6 +24,7 @@ import { AppointmentDragLayer, DropToast } from '../AppointmentDragLayer';
 import { saveDrop, movedFields, isMissedAppt } from '../scheduleDrag';
 import { featureOn } from '../brand';
 import { ROOM_OPTIONS, rxApplies } from '../patientOptions';
+import { pollWhileVisible } from '../pageVisibility';
 
 export const TIME_SLOTS = [];
 for (let h = 8; h <= 17; h++) {
@@ -1656,7 +1657,11 @@ function ScheduleApp() {
   // `clear`: a new day while a card is being dragged (hovering over the
   // arrows) -- the grid stays up so the drag can carry on, but the old
   // day's cards mustn't show under the new date while it loads.
+  // Only the newest load may fill the grid: clicking through days quickly
+  // used to let a slower, older response land last and show the wrong day.
+  const loadSeqRef = useRef(0);
   const loadDay = useCallback(async (date, { background = false, clear = false } = {}) => {
+    const seq = ++loadSeqRef.current;
     if (!background) setLoading(true);
     if (clear) { setAppointments([]); setOooRecords([]); setClosedInfo(null); }
     setError(null);
@@ -1668,20 +1673,32 @@ function ScheduleApp() {
         api.getOOO(dateStr),
         api.getClosedDates(dateStr, dateStr).catch(() => []),
       ]);
+      if (seq !== loadSeqRef.current) return;
       setAppointments(apts);
       setOooRecords(ooo);
       setClosedInfo(closedDates.length > 0 ? closedDates[0] : null);
     } catch (err) {
+      if (seq !== loadSeqRef.current) return;
       setError(err.message);
     }
     setLoading(false);
     setDayLoadedOnce(true);
   }, []);
 
+  // After a change (quick edits, drag and drop, okays): the day reloads now
+  // and the two-week conflicts banner shortly after, instead of up to five
+  // minutes later. The 30-second poll reloads only the day.
+  const lookaheadTimerRef = useRef(null);
+  const loadLookaheadRef = useRef(null);
+  const refreshLookaheadSoon = useCallback(() => {
+    clearTimeout(lookaheadTimerRef.current);
+    lookaheadTimerRef.current = setTimeout(() => loadLookaheadRef.current?.(), 1500);
+  }, []);
+  useEffect(() => () => clearTimeout(lookaheadTimerRef.current), []);
   const loadDayRef = useRef(null);
   useEffect(() => {
-    loadDayRef.current = () => loadDay(selectedDateRef.current, { background: true });
-  }, [loadDay]);
+    loadDayRef.current = () => { loadDay(selectedDateRef.current, { background: true }); refreshLookaheadSoon(); };
+  }, [loadDay, refreshLookaheadSoon]);
 
   // ---- Drag and drop (scheduleDrag.js) ----
   const [dropToast, setDropToast] = useState(null);
@@ -1769,12 +1786,11 @@ function ScheduleApp() {
 
   // No push-based real-time on this backend (unlike Supabase) -- poll instead.
   useEffect(() => {
-    const interval = setInterval(() => {
+    return pollWhileVisible(() => {
       // Not mid-drag: the cards would shift under the one being dragged.
       if (isDragging()) return;
       loadDay(selectedDateRef.current, { background: true });
     }, 30000);
-    return () => clearInterval(interval);
   }, [loadDay, isDragging]);
 
   // The old client-side auto-extend mechanism for Appointments has been
@@ -1816,9 +1832,9 @@ function ScheduleApp() {
   useEffect(() => {
     if (!dayLoadedOnce) return;
     loadLookaheadConflicts();
-    const interval = setInterval(loadLookaheadConflicts, 5 * 60 * 1000);
-    return () => clearInterval(interval);
+    return pollWhileVisible(loadLookaheadConflicts, 5 * 60 * 1000);
   }, [dayLoadedOnce, loadLookaheadConflicts]);
+  useEffect(() => { loadLookaheadRef.current = loadLookaheadConflicts; }, [loadLookaheadConflicts]);
 
   const goToPreviousDay = () => {
     const d = new Date(selectedDate);
@@ -2543,7 +2559,7 @@ function ScheduleApp() {
           defaultDate={selectedDate}
           prefill={prefill}
           onClose={() => { setShowModal(false); setEditingAppointment(null); setPrefill(null); }}
-          onSaved={() => { setShowModal(false); setEditingAppointment(null); setPrefill(null); loadDay(selectedDateRef.current, { background: true }); }}
+          onSaved={() => { setShowModal(false); setEditingAppointment(null); setPrefill(null); loadDay(selectedDateRef.current, { background: true }); refreshLookaheadSoon(); }}
           onCommentsSynced={() => loadDay(selectedDateRef.current, { background: true })}
         />
       )}
@@ -2557,7 +2573,7 @@ function ScheduleApp() {
           existing={editingOOO}
           defaultDate={selectedDate}
           onClose={() => { setShowOOOModal(false); setEditingOOO(null); }}
-          onSaved={() => { setShowOOOModal(false); setEditingOOO(null); loadDay(selectedDateRef.current, { background: true }); }}
+          onSaved={() => { setShowOOOModal(false); setEditingOOO(null); loadDay(selectedDateRef.current, { background: true }); refreshLookaheadSoon(); }}
           onCommentsSynced={() => loadDay(selectedDateRef.current, { background: true })}
         />
       )}

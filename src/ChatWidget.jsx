@@ -3,6 +3,7 @@ import { api } from './api';
 import { useAuth } from './AuthContext';
 import { useChat } from './ChatContext';
 import Linkify from './Linkify';
+import { pollWhileVisible } from './pageVisibility';
 
 const BRAND_COLOR = 'var(--brand-primary)';
 const BORDER = '#E2E4E9';
@@ -140,8 +141,7 @@ function ThreadView({ conversation, directory, directoryMap, currentUser, onBack
   useEffect(() => {
     loadMessages();
     api.markConversationRead(conversation.id).catch(() => {});
-    const interval = setInterval(loadMessages, 5000);
-    return () => clearInterval(interval);
+    return pollWhileVisible(loadMessages, 5000);
   }, [conversation.id, loadMessages]);
 
   useEffect(() => {

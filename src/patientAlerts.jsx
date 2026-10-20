@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from './api';
+import { pollWhileVisible } from './pageVisibility';
 
 // Allergy / immunization alerts. Shown in bright yellow: a warning triangle
 // for allergies, a syringe for immunizations -- on the patient chart banner
@@ -115,8 +116,8 @@ export function usePatientAlerts() {
       firstFetchScheduled = true;
       setTimeout(() => { if (!cache && !inflight) fetchAlerts(); }, 1000);
     }
-    const timer = setInterval(() => { if (!inflight) fetchAlerts(); }, 5 * 60 * 1000);
-    return () => { listeners.delete(setMap); clearInterval(timer); };
+    const stop = pollWhileVisible(() => { if (!inflight) fetchAlerts(); }, 5 * 60 * 1000);
+    return () => { listeners.delete(setMap); stop(); };
   }, []);
   return map;
 }

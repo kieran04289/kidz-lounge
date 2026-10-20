@@ -23,6 +23,7 @@ import { canceledLane, isCanceledAppt, NO_ROOM_NEEDED } from '../scheduleLanes';
 import { useAppointmentDrag } from '../useAppointmentDrag';
 import { AppointmentDragLayer, DropToast } from '../AppointmentDragLayer';
 import { saveDrop, movedFields, isMissedAppt } from '../scheduleDrag';
+import { pollWhileVisible } from '../pageVisibility';
 
 // Phone/tablet header controls: one height, big enough to tap.
 const MOBILE_CONTROL_H = 38;
@@ -170,7 +171,11 @@ export default function WeeklySchedulePage() {
   // after a drop, and when a dragged card flips the week (the drag needs the
   // grid to stay up). The grid only draws the days in view, so the old
   // week's cards don't linger.
+  // Only the newest load fills the week (fast week / provider switching used
+  // to let an older response land last).
+  const loadSeqRef = useRef(0);
   const load = useCallback(async ({ background = false } = {}) => {
+    const seq = ++loadSeqRef.current;
     if (!activeProvider) {
       setLoading(false);
       setLoadedFor(activeProvider);
@@ -189,11 +194,13 @@ export default function WeeklySchedulePage() {
         fetchContractedGapsWithRetry(activeProvider, start, end),
         api.getClosedDates(start, end).catch(() => []),
       ]);
+      if (seq !== loadSeqRef.current) return;
       setAppointments(apts || []);
       setOooRecords(ooo || []);
       setContractedGaps(gaps || []);
       setClosedDates(closed || []);
     } catch (err) {
+      if (seq !== loadSeqRef.current) return;
       setError(err.message);
     }
     setLoading(false);
@@ -266,8 +273,7 @@ export default function WeeklySchedulePage() {
   useEffect(() => {
     if (!gridReady) return;
     loadLookaheadConflicts();
-    const interval = setInterval(loadLookaheadConflicts, 5 * 60 * 1000);
-    return () => clearInterval(interval);
+    return pollWhileVisible(loadLookaheadConflicts, 5 * 60 * 1000);
   }, [gridReady, loadLookaheadConflicts]);
   // After "Okay outside hours": the week and the two-week lookahead both drop it.
   const refreshAfterOkay = () => { load({ background: true }); loadLookaheadConflicts(); };
@@ -847,7 +853,7 @@ export default function WeeklySchedulePage() {
           defaultDate={prefill?.appointment_date ? new Date(prefill.appointment_date + 'T00:00:00') : daysToShow[0].date}
           prefill={prefill}
           onClose={() => { setShowModal(false); setEditingAppointment(null); setPrefill(null); }}
-          onSaved={() => { setShowModal(false); setEditingAppointment(null); setPrefill(null); load(); }}
+          onSaved={() => { setShowModal(false); setEditingAppointment(null); setPrefill(null); load(); loadLookaheadConflicts(); }}
           onCommentsSynced={load}
         />
       )}

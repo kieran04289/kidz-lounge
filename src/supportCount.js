@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { api } from './api';
+import { pollWhileVisible } from './pageVisibility';
 
 // Only Developers see the help desk tickets (matches routes/support.js).
 export const canSeeSupportTickets = (user) => user?.role === 'developer';
@@ -24,9 +25,9 @@ export function useSupportOpenCount(user) {
   useEffect(() => {
     if (!isOwner) return undefined;
     const first = setTimeout(check, 3000); // background: after the page's own requests
-    const timer = setInterval(check, 60 * 1000);
+    const stop = pollWhileVisible(check, 60 * 1000);
     window.addEventListener('kl-support-tickets-changed', check);
-    return () => { clearTimeout(first); clearInterval(timer); window.removeEventListener('kl-support-tickets-changed', check); };
+    return () => { clearTimeout(first); stop(); window.removeEventListener('kl-support-tickets-changed', check); };
   }, [isOwner, check, location.pathname]);
   return isOwner ? count : 0;
 }

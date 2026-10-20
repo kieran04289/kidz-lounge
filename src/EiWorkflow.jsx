@@ -31,6 +31,21 @@ function Check({ done }) {
   );
 }
 
+// One copy of a child's workflow for the chart (Oct 2026): the Overview and
+// the Services tab both show it, and it's one of the heavier requests, so a
+// second tab within 30 seconds reuses it. Any change on the chart (a
+// mandate, End EI services) asks for a fresh one.
+const WORKFLOW_TTL_MS = 30 * 1000;
+const workflowCache = new Map(); // patient id -> { at, promise }
+function loadWorkflow(patientId, { fresh = false } = {}) {
+  const hit = workflowCache.get(patientId);
+  if (!fresh && hit && Date.now() - hit.at < WORKFLOW_TTL_MS) return hit.promise;
+  const promise = api.getEiWorkflow(patientId);
+  workflowCache.set(patientId, { at: Date.now(), promise });
+  promise.catch(() => workflowCache.delete(patientId));
+  return promise;
+}
+
 const sessionLine = (s) => `${nice(s.date)} · ${formatSlotLabel(s.time)} · ${s.service} with ${s.provider}`;
 
 // One booked session after EI ended: delete it, or end its weekly series.
@@ -101,7 +116,8 @@ export default function EiWorkflowCard({ patient, headerStyle, boxStyle, reloadK
   const [result, setResult] = useState(null);
   useEffect(() => {
     let alive = true;
-    api.getEiWorkflow(patient.id)
+    // A reload (a change made here or on the Services tab) is always fresh.
+    loadWorkflow(patient.id, { fresh: reload + reloadKey > 0 })
       .then(d => { if (alive) { setData(d); setError(null); } })
       .catch(err => { if (alive) setError(err.message); });
     return () => { alive = false; };
@@ -192,7 +208,7 @@ export function EiOverview({ patient, headerStyle, boxStyle, formsToReview = 0, 
   const [data, setData] = useState(null);
   useEffect(() => {
     let alive = true;
-    api.getEiWorkflow(patient.id).then(d => { if (alive) setData(d); }).catch(() => {});
+    loadWorkflow(patient.id).then(d => { if (alive) setData(d); }).catch(() => {});
     return () => { alive = false; };
   }, [patient.id]);
   if (!data) return null;

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api } from './api';
 import { useAuth } from './AuthContext';
+import { pollWhileVisible } from './pageVisibility';
 
 const ChatContext = createContext(null);
 
@@ -31,8 +32,8 @@ export function ChatProvider({ children }) {
     // Background: let the page's own requests go first.
     const first = setTimeout(refreshConversations, 2000);
     // Chat expectations are more "live" than Tasks, so this polls more often.
-    const interval = setInterval(refreshConversations, 15000);
-    return () => { clearTimeout(first); clearInterval(interval); };
+    const stop = pollWhileVisible(refreshConversations, 15000);
+    return () => { clearTimeout(first); stop(); };
   }, [user, refreshConversations]);
 
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0);

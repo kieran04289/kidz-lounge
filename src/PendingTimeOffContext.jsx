@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { api } from './api';
 import { useAuth } from './AuthContext';
@@ -16,8 +16,14 @@ export function PendingTimeOffProvider({ children }) {
   const isAdmin = canAdminister(user); // time-off approvals are in the Admin area
   const [pendingCount, setPendingCount] = useState(0);
 
-  const refreshPending = useCallback(async () => {
+  // Moving between pages refreshes at most once a minute (it fired two
+  // requests on every click before); an action calling refreshPending()
+  // directly always refreshes.
+  const lastRef = useRef(0);
+  const refreshPending = useCallback(async ({ soft = false } = {}) => {
     if (!isAdmin) { setPendingCount(0); return; }
+    if (soft && Date.now() - lastRef.current < 60 * 1000) return;
+    lastRef.current = Date.now();
     // Time off plus contracted hours change requests: both wait in Admin → Time off.
     const [pending, hours] = await Promise.all([
       api.getAllTimeOffRequests('pending').catch(() => null),
@@ -28,7 +34,7 @@ export function PendingTimeOffProvider({ children }) {
 
   // Re-check when the admin signs in and whenever they move between pages,
   // so a request someone submitted a moment ago shows up without a refresh.
-  useEffect(() => { refreshPending(); }, [refreshPending, location.pathname]);
+  useEffect(() => { refreshPending({ soft: true }); }, [refreshPending, location.pathname]);
 
   return (
     <PendingTimeOffContext.Provider value={{ pendingCount, refreshPending }}>
