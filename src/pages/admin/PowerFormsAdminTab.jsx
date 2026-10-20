@@ -199,6 +199,7 @@ function QuestionEditor({ field, index, count, setup, onChange, onMove, onDuplic
       {field.chart_field && (
         <p style={{ margin: 0, fontSize: 12.5, color: MUTED }}>
           The answer is offered as a change to the chart's {setup.chart_fields[field.chart_field]?.label.toLowerCase()}. Staff review it before it's saved.
+          {setup.chart_fields[field.chart_field]?.hint && <> {setup.chart_fields[field.chart_field].hint}</>}
         </p>
       )}
     </div>
