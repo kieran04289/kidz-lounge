@@ -106,7 +106,8 @@ function EndForm({ patient, reasons, onDone, onCancel }) {
   );
 }
 
-export default function EiWorkflowCard({ patient, headerStyle, boxStyle, reloadKey = 0 }) {
+// `parts`: which sections to show here ('intake', 'checks', 'discharge').
+export default function EiWorkflowCard({ patient, headerStyle, boxStyle, reloadKey = 0, parts = ['intake', 'checks', 'discharge'] }) {
   const { user } = useAuth();
   const office = canManage(user);
   const [data, setData] = useState(null);
@@ -129,7 +130,7 @@ export default function EiWorkflowCard({ patient, headerStyle, boxStyle, reloadK
   const d = data.discharge;
   return (
     <>
-      {intake && !intake.complete && (
+      {parts.includes('intake') && intake && !intake.complete && (
         <>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
             <p style={headerStyle}>EI intake</p>
@@ -149,11 +150,11 @@ export default function EiWorkflowCard({ patient, headerStyle, boxStyle, reloadK
         </>
       )}
 
-      {data.outside.length > 0 && (
+      {parts.includes('checks') && data.outside.length > 0 && (
         <>
           <p style={headerStyle}>Booked sessions to check</p>
           <div style={boxStyle}>
-            <p style={{ margin: '0 0 6px', fontSize: 12.5, color: MUTED }}>Booked in the next {data.lookahead_days} days without a mandate{office ? ' or authorization' : ''} covering them. Fix the mandate or authorization below, or change the session.</p>
+            <p style={{ margin: '0 0 6px', fontSize: 12.5, color: MUTED }}>Booked in the next {data.lookahead_days} days without a mandate{office ? ' or authorization' : ''} covering them. Fix the mandate or authorization above, or change the session.</p>
             {data.outside.map(s => (
               <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '7px 0', borderTop: `1px solid ${LINE}`, fontSize: 13, color: INK, flexWrap: 'wrap' }}>
                 <span>{sessionLine(s)}</span>
@@ -164,7 +165,7 @@ export default function EiWorkflowCard({ patient, headerStyle, boxStyle, reloadK
         </>
       )}
 
-      {(d || office) && (
+      {parts.includes('discharge') && (d || office) && (
         <>
           <p style={headerStyle}>Discharge</p>
           <div style={boxStyle}>
