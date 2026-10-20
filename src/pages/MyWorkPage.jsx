@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import { useAuth } from '../AuthContext';
 import { useTasks } from '../TasksContext';
 import { useChat } from '../ChatContext';
 import { useIsMobile } from '../useIsMobile';
@@ -54,18 +55,33 @@ function Row({ severity, main, sub, date, children }) {
 
 const small = { padding: '5px 12px', fontSize: 12.5 };
 
+// The last copy, shown at once while a fresh one loads (Oct 2026: opening My
+// work waited on the whole request). Kept in this tab only (sessionStorage,
+// per person, like the Patients filters), and only used when it's today's.
+const cacheKey = (username) => `kl.mywork.${username || ''}`;
+function readCache(username) {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(cacheKey(username)) || 'null');
+    return saved && saved.today === new Date().toLocaleDateString('en-CA') ? saved : null;
+  } catch { return null; }
+}
+function writeCache(username, data) {
+  try { sessionStorage.setItem(cacheKey(username), JSON.stringify(data)); } catch { /* full or blocked: skip */ }
+}
+
 export default function MyWorkPage() {
   const { setDrawerOpen } = useTasks();
   const isMobile = useIsMobile(768);
   const navigate = useNavigate();
-  const [data, setData] = useState(null);
+  const { user } = useAuth();
+  const [data, setData] = useState(() => readCache(user?.username));
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(null); // { existing } | { prefill }
   const [providers, setProviders] = useState([]);
 
   const load = useCallback(() => api.getMyWork()
-    .then(d => { setData(d); setError(null); })
-    .catch(err => setError(err.message)), []);
+    .then(d => { setData(d); setError(null); writeCache(user?.username, d); })
+    .catch(err => setError(err.message)), [user?.username]);
   useEffect(() => { load(); return pollWhileVisible(load, 60 * 1000); }, [load]);
   useEffect(() => { api.getProviders().then(p => setProviders((p || []).filter(x => !x.archived))).catch(() => {}); }, []);
 
