@@ -97,7 +97,9 @@ function EditorDialog({ person, onClose, onChanged, isMobile }) {
   );
 }
 
-export default function CredentialsPage() {
+// `embedded`: shown inside Compliance → Staff (PedsDesk's Office menu, Oct
+// 2026: "Compliance, including credentials"), without its own page frame.
+export default function CredentialsPage({ embedded = false }) {
   const isMobile = useIsMobile(900);
   const [staff, setStaff] = useState(null);
   const [error, setError] = useState(null);
@@ -130,9 +132,9 @@ export default function CredentialsPage() {
   );
 
   return (
-    <div style={{ background: PAGE_BG, fontFamily: FONT, minHeight: '100%' }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: isMobile ? '18px 14px 40px' : '28px 28px 56px' }}>
-        <PageHeader title="Credentials" isMobile={isMobile} />
+    <div style={embedded ? { fontFamily: FONT } : { background: PAGE_BG, fontFamily: FONT, minHeight: '100%' }}>
+      <div style={embedded ? {} : { maxWidth: 1280, margin: '0 auto', padding: isMobile ? '18px 14px 40px' : '28px 28px 56px' }}>
+        {!embedded && <PageHeader title="Credentials" isMobile={isMobile} />}
         <UnderlineTabs label="Credentials views" active={tab} onPick={setTab} style={{ marginBottom: 16 }}
           tabs={[
             { key: 'all', label: 'All credentials' },

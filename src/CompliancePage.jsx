@@ -6,6 +6,7 @@ import { Card, PageHeader, Tag, UnderlineTabs } from './dashboardUi';
 import { INK, MUTED, HAIRLINE, PAGE_BG, FONT, NUMERIC, TONES, ACCENT, buttonStyle } from './uiTokens';
 import { featureOn } from './brand';
 import { fmtDate } from './sessionNotePdf';
+import CredentialsPage from './pages/CredentialsPage';
 
 // The office's EI compliance dashboard (the "ei" feature, PedsDesk only, Oct
 // 2026; API routes/compliance.js): everything an NYC EI agency is audited on
@@ -14,18 +15,18 @@ import { fmtDate } from './sessionNotePdf';
 
 // The API's sections sorted into four groups (Kieran, Oct 2026: eleven
 // tabs in a row made things hard to find). A summary of the groups comes
-// first; picking one shows its sections as tabs. Make-ups and credentials
-// have their own pages (Mandates, Credentials), so they're counted here and
-// linked to rather than listed twice.
+// first; picking one shows its sections as tabs. Make-ups live in EI Hub's
+// Mandates, so they're counted here and linked to. Credentials are part of
+// Compliance (Kieran, Oct 2026): the Staff group shows the Credentials page
+// itself (CredentialsPage `embedded`), so they're never listed twice.
 const GROUPS = [
   { key: 'paperwork', label: 'Paperwork', sections: [['notes', 'Session notes'], ['reports', 'Progress reports'], ['evals', 'Evaluation reports']] },
   { key: 'services', label: 'Services', sections: [['starts', 'Service starts'], ['absences', 'Provider absences']],
-    link: { section: 'makeups', to: featureOn('mandates') ? '/mandates' : '/billing', page: 'Mandates', what: (n) => `${n} make-up${n === 1 ? '' : 's'} owed or due` } },
+    link: { section: 'makeups', to: featureOn('mandates') ? '/ei-hub?view=mandates' : '/billing', page: 'Mandates', what: (n) => `${n} make-up${n === 1 ? '' : 's'} owed or due` } },
   { key: 'deadlines', label: 'Child deadlines', sections: [['ifsps', 'IFSPs ending'], ['authorizations', 'Authorizations'], ['transitions', 'Turning 3'], ['orders', 'Orders (PT/OT)']] },
-  { key: 'staff', label: 'Staff', sections: [],
-    link: { section: 'credentials', to: '/credentials', page: 'Credentials', what: (n) => `${n} staff credential${n === 1 ? '' : 's'} expired or expiring` } },
+  { key: 'staff', label: 'Staff', sections: [], countOf: 'credentials', embed: 'credentials' },
 ];
-const keysOf = (g) => [...g.sections.map(([k]) => k), ...(g.link ? [g.link.section] : [])];
+const keysOf = (g) => [...g.sections.map(([k]) => k), ...(g.link ? [g.link.section] : []), ...(g.countOf ? [g.countOf] : [])];
 
 function Rows({ items, isMobile, onNotified }) {
   const navigate = useNavigate();
@@ -127,6 +128,7 @@ export default function CompliancePage() {
                 {items && <Rows items={items} isMobile={isMobile} onNotified={() => setReload(n => n + 1)} />}
               </Card>
             )}
+            {group.embed === 'credentials' && <CredentialsPage embedded />}
             {group.link && (
               <p style={{ margin: tab ? '14px 2px 0' : 0, fontSize: 13.5, color: MUTED }}>
                 {linked === null ? `${group.link.page} couldn't be checked. ` : `${group.link.what((linked || []).length)}. `}

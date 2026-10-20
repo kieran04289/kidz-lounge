@@ -169,6 +169,15 @@ Kieran is building PedsDesk into the EMR for NYC Early Intervention agencies (se
   - **RX** shows for Insurance patients and for PT / OT (`rxServices`): NYS needs a physician's order for those.
   - **Compliance** adds Service starts (14 days from the authorization), Provider absences (**Told family & SC** records the 5-business-day notice) and Orders (PT / OT).
   - **Signed records can't be lost from the schedule:** moving, deleting or changing a held / missed session that has a signed note returns 409 with the reason (shown as is).
+- **EI workflow overhaul** (Oct 19 2026; PedsDesk unless noted; decisions in the memory note "PedsDesk overhaul decisions"):
+  - **Menu:** category titles link to their first page (the caret opens the menu); Patients = Patients, Waitlist (Provider directory stays in the footer and search); Office = Payroll, **EI Hub** (`/ei-hub`: Mandates, Needs attention, Claims; Claims only for `canManage`; `/mandates` redirects there, `?view=` picks a tab), **Compliance** (Credentials inside its Staff group: `CredentialsPage embedded`), Power Forms. No Progress ↔ Evaluation report cross-links.
+  - **Chart:** below the banner (unchanged), tabs grouped into Clinical (IFSP, Services, Session notes, Appointments) and Office (Documents, Care team, EI Billing, Power Forms) with `ChartTabHeader` on every tab (`GROUPED_CHART` in `PatientChartPage.jsx`); Kidz Lounge keeps its flat list.
+  - **Services tab** starts with `src/EiWorkflow.jsx`: EI intake checklist, booked sessions to check, Discharge (End EI services → sessions after it to delete or end one by one).
+  - **Who cancelled?** Family / Provider in the appointment window for a Canceled EI session (required; provider: "family and SC told 5 business days ahead" tickbox); the card's status menu opens the window for that (`src/eiCancel.js`); cards show "Canceled · Provider".
+  - **Billing codes** on the session note (`NoteCodes` in `SessionNotes.jsx`) until signed; EI-Hub claims' code editor asks for a reason once the note is signed.
+  - **EI Overview** (`EiOverview` in `src/EiWorkflow.jsx`): What needs doing (each line opens its tab; red = late, amber = due) and Current services first; rows the banner or that list shows (MRN, Services, Mandate, IFSP end, Report date) are left out for EI children.
+  - **Booking warning:** the appointment window shows "No ST mandate / authorization covering this date" from `api.getEiCoverage` (saving still allowed).
+  - **Both clinics:** less-used pages load on demand (`lazy` in `App.jsx`; main bundle 1.29 MB → 641 KB).
 - **With a switch off, everything behaves exactly as before.** Shared screens and routes (schedule, appointment form, patient chart, billing) only branch on the switch; never change their existing behavior to suit the feature.
 - **Schema changes are additive only** (new tables, new nullable columns). Never rename, drop or tighten anything Kidz Lounge uses.
 - Kieran flips switches by code change; there's no setting in the app.

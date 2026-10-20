@@ -350,6 +350,8 @@ export const api = {
   getSessionNotes: (month, { provider, patientId } = {}) => request(`/session-notes?month=${month}${provider ? `&provider=${encodeURIComponent(provider)}` : ''}${patientId ? `&patient_id=${patientId}` : ''}`),
   getSessionNote: (key) => request(`/session-notes/note?key=${encodeURIComponent(key)}`),
   saveSessionNote: (record) => request('/session-notes/note', { method: 'PUT', body: JSON.stringify(record) }),
+  // The session's billing codes, on its note (null = the provider's defaults).
+  saveSessionNoteCodes: (key, codes) => request('/session-notes/note/codes', { method: 'PUT', body: JSON.stringify({ key, codes }) }),
   parentSignSessionNote: (record) => request('/session-notes/note/parent-sign', { method: 'POST', body: JSON.stringify(record) }),
   providerSignSessionNote: (record) => request('/session-notes/note/provider-sign', { method: 'POST', body: JSON.stringify(record) }),
   addSessionNoteAddendum: (key, body) => request('/session-notes/note/addenda', { method: 'POST', body: JSON.stringify({ key, body }) }),
@@ -362,6 +364,10 @@ export const api = {
   deleteEiConsent: (patientId, id) => request(`/patients/${patientId}/ei-consents/${id}`, { method: 'DELETE' }),
   // The chart's Services tab: EI mandates and authorizations (routes/eiServices.js).
   getEiServices: (patientId) => request(`/patients/${patientId}/ei-services`),
+  // The EI child's workflow (intake, sessions to check, discharge): routes/eiWorkflow.js.
+  getEiWorkflow: (patientId) => request(`/patients/${patientId}/ei-workflow`),
+  getEiCoverage: (patient, provider, date) => request(`/ei-coverage?patient=${encodeURIComponent(patient)}&provider=${encodeURIComponent(provider)}&date=${date}`),
+  endEiServices: (patientId, body) => request(`/patients/${patientId}/ei-end`, { method: 'POST', body: JSON.stringify(body) }),
   addEiMandate: (patientId, body) => request(`/patients/${patientId}/ei-services/mandates`, { method: 'POST', body: JSON.stringify(body) }),
   correctEiMandate: (patientId, rowId, body) => request(`/patients/${patientId}/ei-services/mandates/${rowId}`, { method: 'PUT', body: JSON.stringify(body) }),
   addEiAuthorization: (patientId, body) => request(`/patients/${patientId}/ei-services/authorizations`, { method: 'POST', body: JSON.stringify(body) }),

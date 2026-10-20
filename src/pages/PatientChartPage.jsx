@@ -17,6 +17,7 @@ import { EiChartCard } from '../EiChartCard';
 import { PowerFormsChartTab } from '../PowerFormsChartTab';
 import IfspTab from '../IfspTab';
 import EiServicesTab from '../EiServicesTab';
+import { EiOverview } from '../EiWorkflow';
 import { SessionNotesChartTab } from '../SessionNotes';
 import { featureOn } from '../brand';
 import { rxApplies } from '../patientOptions';
@@ -259,6 +260,33 @@ const NOTES_TAB = { key: 'session-notes', label: 'Session notes' };
 // Power Forms (PowerFormsChartTab.jsx): Reception, Admins and Developers.
 const FORMS_TAB = { key: 'power-forms', label: 'Power Forms' };
 const isEiPatient = (patient) => /(^|,)\s*EI\s*(,|$)/.test(patient?.Program || '');
+// PedsDesk ("ei"; Kieran, Oct 2026): below the banner (left as it is), the
+// tabs are grouped into Clinical and Office, Overview first, and every tab
+// opens with the same header (group, title, and a status only where it adds
+// something the banner doesn't show). Kidz Lounge keeps its flat list.
+const GROUPED_CHART = featureOn('ei');
+const CHART_GROUPS = { clinical: 'Clinical', office: 'Office' };
+const GROUP_OF = {
+  ifsp: 'clinical', services: 'clinical', 'session-notes': 'clinical', appointments: 'clinical',
+  documents: 'office', 'care-team': 'office', 'ei-billing': 'office', 'power-forms': 'office',
+};
+const GROUPED_ORDER = ['overview', 'ifsp', 'services', 'session-notes', 'appointments', 'documents', 'care-team', 'ei-billing', 'power-forms'];
+function groupTabs(tabs) {
+  return [...tabs]
+    .sort((a, b) => GROUPED_ORDER.indexOf(a.key) - GROUPED_ORDER.indexOf(b.key))
+    .map(t => ({ ...t, group: GROUP_OF[t.key] || null }));
+}
+function ChartTabHeader({ tab, status }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, paddingBottom: 10, marginBottom: 18, borderBottom: '1px solid var(--brand-border)', flexWrap: 'wrap' }}>
+      <div style={{ minWidth: 0 }}>
+        {tab.group && <div style={{ fontSize: 12, fontWeight: 500, color: BRAND.muted, marginBottom: 2 }}>{CHART_GROUPS[tab.group]}</div>}
+        <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--brand-ink)', margin: 0 }}>{tab.label}</h2>
+      </div>
+      {status && <span style={{ fontSize: 13, color: BRAND.muted }}>{status}</span>}
+    </div>
+  );
+}
 
 function calculateAge(dobStr) {
   if (!dobStr) return null;
@@ -412,9 +440,12 @@ function Sidebar({ tabs, activeTab, setActiveTab, onBack, onEdit }) {
       </button>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {tabs.map(tab => (
+        {tabs.map((tab, i) => (
+          <React.Fragment key={tab.key}>
+          {tab.group && tab.group !== tabs[i - 1]?.group && (
+            <div style={{ fontSize: 12, fontWeight: 500, color: BRAND.muted, padding: '14px 12px 4px' }}>{CHART_GROUPS[tab.group]}</div>
+          )}
           <button
-            key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             style={{
               textAlign: 'left', padding: '9px 12px', borderRadius: 4, border: 'none', cursor: 'pointer',
@@ -425,22 +456,27 @@ function Sidebar({ tabs, activeTab, setActiveTab, onBack, onEdit }) {
           >
             {tab.label}{tab.badge > 0 && <span aria-label={`${tab.badge} to review`} style={{ marginLeft: 6, display: 'inline-block', minWidth: 18, padding: '0 6px', borderRadius: 9, background: '#B54708', color: 'white', fontSize: 11, fontWeight: 700, lineHeight: '18px', textAlign: 'center', boxSizing: 'border-box' }}>{tab.badge}</span>}
           </button>
+          </React.Fragment>
         ))}
       </div>
     </div>
   );
 }
 
-function OverviewTab({ patient, isMobile, onPatientChanged }) {
+function OverviewTab({ patient, isMobile, onPatientChanged, formsToReview = 0, onOpenTab }) {
+  // PedsDesk's EI children: what needs doing and current services first
+  // (src/EiWorkflow.jsx), and nothing the banner or that list already shows.
+  const eiView = GROUPED_CHART && isEiPatient(patient);
   return (
     <div>
+      {eiView && <EiOverview patient={patient} headerStyle={sectionHeaderStyle()} boxStyle={cardStyle()} formsToReview={formsToReview} onOpenTab={onOpenTab} />}
       <p style={sectionHeaderStyle()}>Demographics</p>
       <div style={cardStyle()}>
         <InfoRow label="Date of Birth" value={formatDateMMDDYYYY(patient.Date_of_Birth)} />
-        <InfoRow label="MRN" value={patient.mrn} />
-        <InfoRow label="ID Number" value={patient.ID_Number} />
-        <InfoRow label="Services" value={patient.Services} />
-        <InfoRow label="Mandate" value={patient.Mandate} />
+        {!eiView && <InfoRow label="MRN" value={patient.mrn} />}
+        <InfoRow label={eiView ? 'EI child ID' : 'ID Number'} value={patient.ID_Number} />
+        {!eiView && <InfoRow label="Services" value={patient.Services} />}
+        {!eiView && <InfoRow label="Mandate" value={patient.Mandate} />}
         <InfoRow label="Picture Consent" value={patient.Picture_Consent === true ? 'Yes' : patient.Picture_Consent === false ? 'No' : null} />
         {!patient.Date_of_Birth && !patient.ID_Number && !patient.Services && <EmptyNote>None on file</EmptyNote>}
       </div>
@@ -469,13 +505,14 @@ function OverviewTab({ patient, isMobile, onPatientChanged }) {
         </div>
       </div>
 
-      <p style={sectionHeaderStyle()}>IFSP & Authorization</p>
+      <p style={sectionHeaderStyle()}>{eiView ? 'IFSP & case manager' : 'IFSP & Authorization'}</p>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 20 }}>
         <div style={cardStyle()}>
           <InfoRow label="IFSP Type" value={patient.IFSP_Type} />
           <InfoRow label="IFSP Start" value={formatDateMMDDYYYY(patient.IFSP_Start_Date)} />
-          <InfoRow label="IFSP End" value={formatDateMMDDYYYY(patient.IFSP_End_Date)} />
-          <InfoRow label="Report Date" value={formatDateMMDDYYYY(patient.Report_Date)} />
+          {/* The banner shows these for an EI child. */}
+          {!eiView && <InfoRow label="IFSP End" value={formatDateMMDDYYYY(patient.IFSP_End_Date)} />}
+          {!eiView && <InfoRow label="Report Date" value={formatDateMMDDYYYY(patient.Report_Date)} />}
           {!patient.IFSP_Type && !patient.IFSP_Start_Date && <EmptyNote>None on file</EmptyNote>}
         </div>
         <div style={cardStyle()}>
@@ -1143,7 +1180,12 @@ export default function PatientChartPage() {
 
   const showEiTab = canManage(user) && isEiPatient(patient);
   const showIfspTab = featureOn('ei') && isEiPatient(patient);
-  const tabs = [...TABS, ...(showIfspTab ? [IFSP_TAB, SERVICES_TAB, NOTES_TAB] : []), ...(showEiTab ? [EI_TAB] : []), ...(canManage(user) ? [{ ...FORMS_TAB, badge: formsToReview }] : [])];
+  const flatTabs = [...TABS, ...(showIfspTab ? [IFSP_TAB, SERVICES_TAB, NOTES_TAB] : []), ...(showEiTab ? [EI_TAB] : []), ...(canManage(user) ? [{ ...FORMS_TAB, badge: formsToReview }] : [])];
+  const tabs = GROUPED_CHART ? groupTabs(flatTabs) : flatTabs;
+  const activeTabDef = tabs.find(t => t.key === activeTab);
+  // The one status worth a line in the header: the banner already shows the
+  // next appointment, IFSP end and report dates.
+  const tabStatus = activeTab === FORMS_TAB.key && formsToReview > 0 ? `${formsToReview} to review` : null;
 
   return (
     <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', display: 'flex', flexDirection: 'column', height: '100vh', boxSizing: 'border-box' }}>
@@ -1156,7 +1198,8 @@ export default function PatientChartPage() {
           padding: activeTab === 'documents' ? (isMobile ? '12px 12px' : '20px 24px') : (isMobile ? '16px 16px 40px' : '28px 32px 60px'),
           maxWidth: activeTab === 'documents' || isMobile ? 'none' : 820,
         }}>
-          {activeTab === 'overview' && <OverviewTab patient={patient} isMobile={isMobile} onPatientChanged={() => api.getPatient(name).then(p => p && setPatient(p)).catch(() => {})} />}
+          {GROUPED_CHART && activeTabDef && <ChartTabHeader tab={activeTabDef} status={tabStatus} />}
+          {activeTab === 'overview' && <OverviewTab patient={patient} isMobile={isMobile} formsToReview={formsToReview} onOpenTab={(k) => tabs.some(t => t.key === k) && setActiveTab(k)} onPatientChanged={() => api.getPatient(name).then(p => p && setPatient(p)).catch(() => {})} />}
           {activeTab === 'appointments' && <AppointmentsTab patient={patient} appointments={appointments} onChanged={reloadAppointments} />}
           {activeTab === 'documents' && <DocumentsTab patient={patient} isMobile={isMobile} />}
           {activeTab === 'care-team' && <CareTeamTab patient={patient} appointments={appointments} />}

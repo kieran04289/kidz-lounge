@@ -4,6 +4,7 @@ import { DateField, dateToInputValue } from './pages/SchedulePage';
 import { eiInput, eiLabel } from './eiHubUi';
 import { TONES, buttonStyle, choiceStyle } from './uiTokens';
 import { DISCIPLINES as SERVICES, DISCIPLINE_NAMES } from './disciplines';
+import EiWorkflowCard from './EiWorkflow';
 
 // The patient chart's Services tab (the "ei" feature, PedsDesk only; Kieran,
 // Oct 2026; API routes/eiServices.js): an EI child's mandates and
@@ -224,6 +225,7 @@ export default function EiServicesTab({ patient, headerStyle, boxStyle }) {
   const refresh = () => { setAdding(null); setReload(n => n + 1); };
   return (
     <>
+      <EiWorkflowCard patient={patient} headerStyle={headerStyle} boxStyle={boxStyle} reloadKey={reload} />
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
         <p style={headerStyle}>EI services</p>
         {canAdd.length > 0 && !adding && (

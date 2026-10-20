@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { useIsMobile } from '../useIsMobile';
@@ -102,8 +103,11 @@ function Mark({ entry }) {
 // is the one page it always was, and `section` is ignored.
 const SECTIONS = {
   payroll: { title: 'Payroll', views: [['overview', 'Overview'], ['sheet', 'Billing sheets']] },
-  mandates: { title: 'Mandates', views: [['mandates', 'Mandates'], ['attention', 'Needs attention']] },
-  eihub: { title: 'EI-Hub claims', views: [['eihub', 'EI-Hub Entry']] },
+  // EI Hub (Kieran, Oct 2026): mandates and claims on one page. Everyone gets
+  // Mandates and Needs attention (providers their own rows, as before);
+  // Claims only those allowed EI-Hub (Reception: Import only). /mandates
+  // sends you here.
+  eihub: { title: 'EI Hub', views: [['mandates', 'Mandates'], ['attention', 'Needs attention'], ['eihub', 'Claims']] },
 };
 
 export default function BillingPage({ section = 'payroll' }) {
@@ -127,8 +131,12 @@ export default function BillingPage({ section = 'payroll' }) {
   // on the month overview, with Mandates and Needs attention tabs, the
   // payroll totals above the sheet and problem sessions flagged on it.
   const mandatesOn = featureOn('mandates');
-  const split = mandatesOn ? SECTIONS[section] || SECTIONS.payroll : null;
-  const [view, setView] = useState(split ? split.views[0][0] : 'sheet');
+  const sectionDef = mandatesOn ? SECTIONS[section] || SECTIONS.payroll : null;
+  const split = sectionDef ? { ...sectionDef, views: sectionDef.views.filter(([k]) => k !== 'eihub' || eiHubAllowed) } : null;
+  // ?view= picks a tab (Compliance's make-ups link opens Mandates).
+  const [searchParams] = useSearchParams();
+  const askedView = searchParams.get('view');
+  const [view, setView] = useState(split ? (split.views.some(([k]) => k === askedView) ? askedView : split.views[0][0]) : 'sheet');
   const eiHub = eiHubAllowed && view === 'eihub';
   const onSheet = view === 'sheet';
   const headerRef = useRef(null);

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { canOkayHours, setHoursOk } from '../hoursOk';
+import { opensWindowForStatus } from '../eiCancel';
 import { useIsMobile } from '../useIsMobile';
 import {
   BRAND, BRAND_SERIF, TIME_SLOTS, ROW_HEIGHT, CARD_MARGIN, STATUS_OPTIONS,
@@ -368,6 +369,7 @@ export default function WeeklySchedulePage() {
 
   const handleStatusChange = async (apt, newStatus) => {
     setStatusDropdown(null);
+    if (await opensWindowForStatus(apt, newStatus)) { setEditingAppointment(apt); setPrefill({ startStatus: newStatus }); setShowModal(true); return; }
     await applyQuickEdit(apt, { appointment_status: newStatus, treatment_area: areaAfterStatus(newStatus, apt.treatment_area) });
     load();
   };
