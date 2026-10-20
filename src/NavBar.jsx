@@ -110,6 +110,29 @@ function GroupMenu({ group }) {
   );
 }
 
+// PedsDesk's phone menu (Oct 2026): each section folds, so the list fits;
+// the section holding the page you're on starts open.
+function MobileGroups({ groups, pathname }) {
+  const current = groups.find(g => g.items.some(i => isActivePath(pathname, i)))?.label || null;
+  const [open, setOpen] = useState(() => new Set(current ? [current] : []));
+  const toggle = (label) => setOpen(prev => { const next = new Set(prev); if (next.has(label)) next.delete(label); else next.add(label); return next; });
+  return groups.map(g => {
+    const isOpen = open.has(g.label);
+    return (
+      <div key={g.label} style={{ display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--brand-border2)' }}>
+        <button type="button" aria-expanded={isOpen} onClick={() => toggle(g.label)}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 20px', border: 'none', background: 'white', cursor: 'pointer', fontFamily: 'inherit', fontSize: 15, fontWeight: 600, color: g.label === current ? BRAND_COLOR : '#374151', textAlign: 'left' }}>
+          {g.label}
+          <span style={{ color: '#9CA3AF', display: 'flex' }}><Caret open={isOpen} /></span>
+        </button>
+        {isOpen && g.items.map(item => (
+          <NavLink key={item.to} to={item.to} end={item.end} style={(st) => ({ ...mobileTabStyle(st), paddingLeft: 32 })}>{item.label}</NavLink>
+        ))}
+      </div>
+    );
+  });
+}
+
 const barStyle = {
   display: 'flex',
   alignItems: 'center',
@@ -324,6 +347,15 @@ export default function NavBar() {
   // Close the mobile menu automatically whenever the route changes, so it
   // never stays open after tapping a link or navigating via back/forward.
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
+  // PedsDesk's phone menu: your account links fold up under your name.
+  const [accountOpen, setAccountOpen] = useState(false);
+  // ...and the floating chat button (src/ChatWidget.jsx) would sit on top of
+  // its last items, so it steps aside while the menu is open.
+  useEffect(() => {
+    if (!GROUPED || !menuOpen) return undefined;
+    document.body.classList.add('kl-menu-open');
+    return () => document.body.classList.remove('kl-menu-open');
+  }, [menuOpen]);
   const navRef = useRef(null);
   useStickyHeight(navRef, '--kl-nav-h');
 
@@ -422,32 +454,39 @@ export default function NavBar() {
             position: 'absolute', top: '100%', left: 0, right: 0, background: 'white',
             borderBottom: "2px solid var(--brand-highlight)", boxShadow: '0 8px 16px rgba(0,0,0,0.08)',
             zIndex: 50, display: 'flex', flexDirection: 'column',
+            // PedsDesk's menu is longer than a phone screen (Oct 2026): it
+            // scrolls on its own, without scrolling the page behind it.
+            ...(GROUPED ? { maxHeight: 'calc(100dvh - var(--kl-nav-h, 56px))', overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' } : {}),
           }}
         >
           {GROUPED ? (
             <>
               <div style={{ padding: '12px 20px 4px' }}><NavSearch pages={searchPages} compact /></div>
-              {groups.map(g => (
-                <div key={g.label} style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ padding: '12px 20px 4px', fontSize: 11.5, fontWeight: 600, color: '#9CA3AF' }}>{g.label}</div>
-                  {g.items.map(item => (
-                    <NavLink key={item.to} to={item.to} end={item.end} style={mobileTabStyle}>{item.label}</NavLink>
-                  ))}
-                </div>
-              ))}
+              <MobileGroups groups={groups} pathname={location.pathname} />
             </>
           ) : visibleTabs.map(tab => (
             <NavLink key={tab.to} to={tab.to} end={tab.end} style={mobileTabStyle}>
               {tab.label}
             </NavLink>
           ))}
+          {GROUPED ? (
+            <button type="button" aria-expanded={accountOpen} onClick={() => setAccountOpen(o => !o)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 20px 10px', border: 'none', borderTop: '1px solid var(--brand-border2)', marginTop: 6, background: 'white', cursor: 'pointer', fontFamily: 'inherit', width: '100%', textAlign: 'left' }}>
+              <Avatar name={displayNameFor(user)} size={30} />
+              <span style={{ fontSize: 13, color: BRAND_COLOR, fontWeight: 600 }}>{user.username}</span>
+              <SupportBadge count={supportCount} />
+              <CountBadge count={badgeCount} />
+              <span style={{ marginLeft: 'auto', color: '#9CA3AF', display: 'flex' }}><Caret open={accountOpen} /></span>
+            </button>
+          ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 20px 6px', borderTop: `1px solid var(--brand-border2)`, marginTop: 6 }}>
             <Avatar name={displayNameFor(user)} size={30} />
             <span style={{ fontSize: 13, color: BRAND_COLOR, fontWeight: 600 }}>{user.username}</span>
             <SupportBadge count={supportCount} />
             <CountBadge count={badgeCount} />
           </div>
-          {accountLinks.map(link => (
+          )}
+          {(!GROUPED || accountOpen) && accountLinks.map(link => (
             <NavLink key={link.to} to={link.to} style={mobileTabStyle}>
               <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 {link.label}

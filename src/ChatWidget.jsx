@@ -290,7 +290,7 @@ export default function ChatWidget() {
   };
 
   return (
-    <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 9985, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+    <div data-kl-chat-launcher="" style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 9985, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       {widgetOpen && (
         // Never taller or wider than the window: 480 x 340 when there's room,
         // otherwise whatever is left above the chat button (20px margin +

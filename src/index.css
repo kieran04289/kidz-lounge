@@ -56,3 +56,6 @@ body {
 .kl-mytime-block { transition: transform 80ms ease, box-shadow 80ms ease; }
 .kl-mytime-block:hover { transform: translateY(-1px); box-shadow: 0 4px 12px color-mix(in srgb, var(--brand-ink) 14%, transparent) !important; z-index: 2; }
 .kl-mytime-block:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 1px; z-index: 2; }
+
+/* PedsDesk's phone menu is open (NavBar.jsx): the chat button steps aside. */
+body.kl-menu-open [data-kl-chat-launcher] { display: none; }
