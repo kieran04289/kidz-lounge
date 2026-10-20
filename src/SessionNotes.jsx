@@ -13,6 +13,7 @@ import {
   LOCATION_LABEL, DELIVERY_LABEL, PARTICIPANT_LABEL, METHOD_LABEL, SERVICE_LABEL,
 } from './sessionNotePdf';
 import { buildEiPdf, sessionNoteV2Section, serviceLogSections } from './eiFormsPdf';
+import PaperworkTabs from './PaperworkTabs';
 
 // EI session notes (the "ei" feature, PedsDesk only, Oct 2026; API
 // routes/sessionNotes.js, rules in lib/sessionNotes.js). Follows the NYC EI
@@ -130,7 +131,8 @@ export function SessionNotesPage() {
   const isMobile = useIsMobile(900);
   const manager = canManage(user);
   const [month, setMonth] = useState(monthKey());
-  const [provider, setProvider] = useState('');
+  // ?provider= (My work's "Open list" for a provider's late notes).
+  const [provider, setProvider] = useState(() => new URLSearchParams(window.location.search).get('provider') || '');
   const [tab, setTab] = useState('todo');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -155,7 +157,7 @@ export function SessionNotesPage() {
   return (
     <div style={{ background: PAGE_BG, fontFamily: FONT, minHeight: '100%' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '18px 14px 40px' : '28px 28px 56px' }}>
-        <PageHeader title="Session notes" isMobile={isMobile} actions={(
+        <PageHeader title="Paperwork" isMobile={isMobile} actions={(
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             {manager && (
               <select value={provider} onChange={e => setProvider(e.target.value)} aria-label="Provider"
@@ -167,6 +169,7 @@ export function SessionNotesPage() {
             <MonthNav month={month} setMonth={setMonth} />
           </div>
         )} />
+        <PaperworkTabs />
         <CosignCard isMobile={isMobile} />
         <UnderlineTabs label="Session note views" active={tab} onPick={setTab} style={{ marginBottom: 16 }}
           tabs={TABS.map(t => ({ key: t.key, label: t.label, count: data ? counts[t.key] : null, alert: t.key === 'todo' && counts.todo ? 'warning' : null }))} />
@@ -237,14 +240,22 @@ const Question = ({ n, title, children }) => (
 const toggle = (list, v, on) => (on ? [...new Set([...(list || []), v])] : (list || []).filter(x => x !== v));
 const blankGroup = { group_type: '', group_children: '', group_duration: '', group_site: '', group_location: '', group_location_other: '', group_address: '', aide_name: '', aide_notes: '' };
 const blank = { location: '', delivery: 'in_person', participants: ['child', 'parent'], participants_other: '', outcome_ids: [], outcomes_text: '', narrative: '', parent_methods: [], parent_methods_other: '', strategies: '', ...blankGroup };
-const fromNote = (n, session) => (n ? {
+const fromNote = (n, session, previous = null) => (n ? {
   location: n.location || '', delivery: n.delivery || '', participants: n.participants || [], participants_other: n.participants_other || '',
   outcome_ids: n.outcome_ids || [], outcomes_text: n.outcomes_text || '', narrative: n.narrative || '', parent_methods: n.parent_methods || [],
   parent_methods_other: n.parent_methods_other || '', strategies: n.strategies || '',
   group_type: n.group_type || '', group_children: n.group_children ?? '', group_duration: n.group_duration ?? '', group_site: n.group_site || '',
   group_location: n.group_location || '', group_location_other: n.group_location_other || '', group_address: n.group_address || n.group_site || '',
   aide_name: n.aide_name || '', aide_notes: n.aide_notes || '',
-} : { ...blank, location: session.location || '' });
+} : {
+  ...blank, location: session.location || '',
+  // A new note: the parts that carry over from the provider's last note
+  // for this child (API GET /session-notes/note `previous`).
+  ...(previous ? {
+    delivery: previous.delivery || '', participants: previous.participants || [], participants_other: previous.participants_other || '',
+    parent_methods: previous.parent_methods || [], parent_methods_other: previous.parent_methods_other || '', strategies: previous.strategies || '',
+  } : {}),
+});
 const sigTime = (at) => new Date(at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 // Full-screen panel the provider hands to the parent: name, relationship,
@@ -366,7 +377,7 @@ export function SessionNotePage() {
   const [supLicense, setSupLicense] = useState('');
 
   const load = useCallback(() => api.getSessionNote(key)
-    .then(d => { setData(d); setError(null); setForm(fromNote(d.note, d.session)); setDirty(!d.note && d.can_write); setLicense(d.note?.provider_license || d.session.header.license || ''); })
+    .then(d => { setData(d); setError(null); setForm(fromNote(d.note, d.session, d.previous)); setDirty(!d.note && d.can_write); setLicense(d.note?.provider_license || d.session.header.license || ''); })
     .catch(err => setError(err.message)), [key]);
   useEffect(() => { load(); }, [load]);
 
@@ -461,6 +472,11 @@ export function SessionNotePage() {
         )} />
 
         <Card pad={isMobile ? 14 : 20}>
+          {!note && data.previous && editable && (
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: MUTED }}>
+              Started from your note of {fmtDate(data.previous.session_date)}: who took part, delivery, working with the parent and strategies. Check them, then write what happened today.
+            </p>
+          )}
           {cancelled && (
             <p style={{ margin: '0 0 12px', fontSize: 13.5, color: TONES.warning.fg, fontWeight: 600 }}>
               Canceled session ({session.status}). Give the reason in 1. Must be made up by {fmtDate(note?.makeup_by || session.makeup_by)}.

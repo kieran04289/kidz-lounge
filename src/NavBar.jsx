@@ -33,17 +33,18 @@ function navGroups(user) {
   const manage = canManage(user);
   return [
     { label: 'Schedule', items: [
-      { to: '/', label: 'Daily schedule', end: true, keywords: 'today appointments calendar' },
+      // PedsDesk's / is My work (Oct 2026), so the daily schedule is /schedule.
+      { to: featureOn('ei') ? '/schedule' : '/', label: 'Daily schedule', end: true, keywords: 'today appointments calendar' },
       { to: '/weekly', label: 'Weekly view', keywords: 'week calendar' },
     ] },
     { label: 'Patients', items: [
       { to: '/patients', label: 'Patients', keywords: 'children charts add patient' },
       { to: '/waitlist', label: 'Waitlist', keywords: 'referrals waiting' },
     ] },
-    ...(featureOn('ei') ? [{ label: 'Clinical', items: [
-      { to: '/session-notes', label: 'Session notes', keywords: 'notes sign parent co-sign service log' },
-      { to: '/progress-reports', label: 'Progress reports', keywords: 'reports ifsp review' },
-      { to: '/eval-reports', label: 'Evaluation reports', keywords: 'evals evaluations' },
+    // One Paperwork page (Kieran, Oct 2026): notes and reports as its tabs
+    // (src/PaperworkTabs.jsx), so the menu needs just one link.
+    ...(featureOn('ei') ? [{ label: 'Paperwork', items: [
+      { to: '/session-notes', label: 'Paperwork', also: ['/progress-reports', '/eval-reports'], keywords: 'session notes sign parent co-sign service log progress reports ifsp review evals evaluations' },
     ] }] : []),
     { label: 'Office', items: [
       ...(featureOn('mandates') ? [
@@ -60,12 +61,22 @@ function navGroups(user) {
   ];
 }
 const isActivePath = (pathname, item) => (item.end ? pathname === item.to : pathname === item.to || pathname.startsWith(`${item.to}/`))
+  || (item.also || []).some(p => pathname === p || pathname.startsWith(`${p}/`))
   || (item.to === '/patients' && pathname.startsWith('/patients/'));
 
 // One nav menu (desktop): opens on hover. The title itself goes to the
 // menu's first page (Kieran, Oct 2026); the caret beside it opens the menu
 // by click, for touch screens and the keyboard.
 function GroupMenu({ group }) {
+  if (group.items.length === 1) return <SingleLink item={group.items[0]} />;
+  return <GroupDropdown group={group} />;
+}
+// A menu with one page is just a link to it (Paperwork).
+function SingleLink({ item }) {
+  const location = useLocation();
+  return <NavLink to={item.to} end={item.end} style={() => tabStyle({ isActive: isActivePath(location.pathname, item) })}>{item.label}</NavLink>;
+}
+function GroupDropdown({ group }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   const closeTimer = useRef(null);
@@ -117,6 +128,13 @@ function MobileGroups({ groups, pathname }) {
   const [open, setOpen] = useState(() => new Set(current ? [current] : []));
   const toggle = (label) => setOpen(prev => { const next = new Set(prev); if (next.has(label)) next.delete(label); else next.add(label); return next; });
   return groups.map(g => {
+    if (g.items.length === 1) {
+      const item = g.items[0];
+      return (
+        <NavLink key={g.label} to={item.to} end={item.end}
+          style={() => ({ ...mobileTabStyle({ isActive: isActivePath(pathname, item) }), fontWeight: 600, borderTop: '1px solid var(--brand-border2)' })}>{item.label}</NavLink>
+      );
+    }
     const isOpen = open.has(g.label);
     return (
       <div key={g.label} style={{ display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--brand-border2)' }}>
@@ -370,6 +388,7 @@ export default function NavBar() {
   const searchPages = GROUPED ? [
     ...groups.flatMap(g => g.items.map(i => ({ ...i, group: g.label }))),
     ...accountLinks.map(l => ({ to: l.to, label: l.label, group: 'Account' })),
+    ...(featureOn('ei') ? [{ to: '/', label: 'My work', group: 'Home', keywords: 'home today to do todo tasks waiting late' }] : []),
     { to: '/manual', label: 'User manual', group: 'Help', keywords: 'how to guide' },
     // Out of the Patients menu (Oct 2026), still in the footer and here.
     { to: '/provider-directory', label: 'Provider directory', group: 'Help', keywords: 'therapists phone npi license' },
@@ -380,6 +399,8 @@ export default function NavBar() {
     return (
       <nav ref={navRef} style={barStyle}>
         <img src={CLINIC.logo} alt={CLINIC.name} style={{ height: 34, width: 'auto', marginRight: 16 }} />
+        {/* PedsDesk's home, My work (Oct 2026), comes first. */}
+        {GROUPED && featureOn('ei') && <NavLink to="/" end style={tabStyle}>My work</NavLink>}
         {GROUPED ? groups.map(g => <GroupMenu key={g.label} group={g} />) : visibleTabs.map(tab => (
           <NavLink key={tab.to} to={tab.to} end={tab.end} style={tabStyle}>
             {tab.label}
@@ -462,6 +483,7 @@ export default function NavBar() {
           {GROUPED ? (
             <>
               <div style={{ padding: '12px 20px 4px' }}><NavSearch pages={searchPages} compact /></div>
+              {featureOn('ei') && <NavLink to="/" end style={(st) => ({ ...mobileTabStyle(st), fontWeight: 600, borderTop: '1px solid var(--brand-border2)' })}>My work</NavLink>}
               <MobileGroups groups={groups} pathname={location.pathname} />
             </>
           ) : visibleTabs.map(tab => (

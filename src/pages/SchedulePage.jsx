@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { seriesIdOf } from '../appointmentSetting';
 import { CENTER, SETTINGS, isOffsite, offsiteLocation, offsiteSetting, settingOfArea, roomOfArea, needsRoom, isOffGrid, saveSettingChange, areaAfterStatus, VIRTUAL, holdsRoom } from '../appointmentSetting';
 import { api } from '../api';
@@ -620,6 +620,25 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
           {apt.appointment_status}{apt.appointment_status === 'Canceled' && CANCEL_REASON_SHORT[apt.cancel_reason] ? ` · ${CANCEL_REASON_SHORT[apt.cancel_reason]}` : apt.appointment_status === 'Canceled' && apt.missed_by === 'provider' ? ' · Provider' : ''}
         </span>
       </div>
+      {/* PedsDesk: the session's EI note, one click from the card (Kieran,
+          Oct 2026). Neutral like "Set room"; nothing once the note is done.
+          From the API (lib/eiNoteMarks.js). */}
+      {!compact && apt.ei_note && apt.ei_note.status !== 'complete' && (
+        <div style={{ flexShrink: 0, lineHeight: 1.2, position: 'relative', zIndex: 1 }}>
+          <Link
+            to={`/session-notes/note?key=${encodeURIComponent(apt.ei_note.key)}`}
+            onClick={(e) => { e.stopPropagation(); }}
+            title="Open this session's note"
+            style={{
+              display: 'inline-flex', alignItems: 'center', maxWidth: '100%', whiteSpace: 'nowrap', textDecoration: 'none',
+              fontSize: 10, fontWeight: 500, lineHeight: 1.3, borderRadius: 'var(--brand-pill-radius)', padding: '0 6px',
+              border: '1px dashed #d1d5db', background: 'rgba(255,255,255,0.6)', color: '#6b7280',
+            }}
+          >
+            {{ none: 'Write note', draft: 'Finish note', needs_parent: 'Note: parent to sign', needs_provider: 'Note: sign', needs_supervisor: 'Note: co-sign' }[apt.ei_note.status] || 'Note'}
+          </Link>
+        </div>
+      )}
       {alertCount > 0 && (
         <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 2, zIndex: 0 }}>
           {patientAlert.allergies && <AlertSymbol kind="allergies" size={13} title={`Allergies: ${patientAlert.allergies}`} />}

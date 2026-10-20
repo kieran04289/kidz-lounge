@@ -366,6 +366,8 @@ export const api = {
   getEiServices: (patientId) => request(`/patients/${patientId}/ei-services`),
   // The EI child's workflow (intake, sessions to check, discharge): routes/eiWorkflow.js.
   getEiWorkflow: (patientId) => request(`/patients/${patientId}/ei-workflow`),
+  // My work (PedsDesk's home page; routes/myWork.js).
+  getMyWork: () => request('/my-work'),
   getEiCoverage: (patient, provider, date) => request(`/ei-coverage?patient=${encodeURIComponent(patient)}&provider=${encodeURIComponent(provider)}&date=${date}`),
   endEiServices: (patientId, body) => request(`/patients/${patientId}/ei-end`, { method: 'POST', body: JSON.stringify(body) }),
   addEiMandate: (patientId, body) => request(`/patients/${patientId}/ei-services/mandates`, { method: 'POST', body: JSON.stringify(body) }),

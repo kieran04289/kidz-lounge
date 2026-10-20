@@ -13,6 +13,7 @@ import { formatPhone } from './phone';
 import { openBlob, fmtDate, SERVICE_LABEL } from './sessionNotePdf';
 import { buildEiPdf, progressNoteSection } from './eiFormsPdf';
 import { RATING_LABEL, COMM_LABEL, DELIVERY_LABEL, TYPE_LABEL, QUESTIONS } from './progressReportPdf';
+import PaperworkTabs from './PaperworkTabs';
 
 // EI progress reports (the "ei" feature, PedsDesk only, Oct 2026; API
 // routes/progressReports.js, rules in lib/progressReports.js). The NYC
@@ -99,28 +100,75 @@ export function ProgressReportsPage() {
   const [tab, setTab] = useState(manager ? 'office' : 'todo');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     let alive = true;
     api.getProgressReports()
       .then(d => { if (alive) { setData(d); setError(null); } })
       .catch(err => { if (alive) setError(err.message); });
     return () => { alive = false; };
-  }, []);
+  }, [reload]);
   const rows = data?.rows || [];
   const counts = Object.fromEntries(TABS.map(t => [t.key, rows.filter(r => t.statuses.includes(r.status)).length]));
   return (
     <div style={{ background: PAGE_BG, fontFamily: FONT, minHeight: '100%' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '18px 14px 40px' : '28px 28px 56px' }}>
-        <PageHeader title="Progress reports" isMobile={isMobile} />
+        <PageHeader title="Paperwork" isMobile={isMobile} />
+        <PaperworkTabs />
         <UnderlineTabs label="Progress report views" active={tab} onPick={setTab} style={{ marginBottom: 16 }}
           tabs={TABS.map(t => ({ key: t.key, label: t.label, count: data ? counts[t.key] : null, alert: (t.key === 'todo' && counts.todo) || (t.key === 'office' && manager && counts.office) ? 'warning' : null }))} />
         <Card pad={isMobile ? 14 : 20}>
           {error && <p role="alert" style={{ margin: '0 0 8px', fontSize: 13.5, color: TONES.danger.fg }}>{error}</p>}
           {!data && !error && <p style={{ margin: 0, fontSize: 13.5, color: MUTED }}>Loading...</p>}
+          {data && manager && tab === 'office' && <ApproveSeveral key={reload} reports={rows.filter(r => r.status === 'to_approve')} onDone={() => setReload(n => n + 1)} />}
           {data && <ProgressReportRows rows={rows.filter(r => TABS.find(t => t.key === tab).statuses.includes(r.status))} today={data.today}
             showProvider={manager} canStart={!!user?.providerName} isMobile={isMobile} onError={setError} />}
         </Card>
       </div>
+    </div>
+  );
+}
+
+// The office approves several reports at once (Kieran, Oct 2026). Each one
+// still goes through the server's checks (both signatures, the supervisor's
+// co-sign); any it refuses are named, the rest are approved.
+function ApproveSeveral({ reports, onDone }) {
+  const [picked, setPicked] = useState(() => new Set(reports.map(r => r.id)));
+  const [busy, setBusy] = useState(false);
+  const [problems, setProblems] = useState([]);
+  if (reports.length < 2) return null;
+  const chosen = reports.filter(r => picked.has(r.id));
+  const approve = async () => {
+    setBusy(true);
+    const failed = [];
+    for (const r of chosen) {
+      try { await api.progressReportStep(r.id, 'office', { action: 'approve' }); } catch (err) { failed.push(`${r.patient_name} (${r.service}): ${err.message}`); }
+    }
+    setProblems(failed);
+    setBusy(false);
+    onDone();
+  };
+  const toggle = (id) => setPicked(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  return (
+    <div style={{ marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid var(--brand-line)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+        <span style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>Approve several</span>
+        <button type="button" disabled={busy || !chosen.length} onClick={approve} style={buttonStyle('primary', { padding: '5px 12px', fontSize: 12.5 })}>
+          {busy ? 'Approving...' : `Approve selected (${chosen.length})`}
+        </button>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
+        {reports.map(r => (
+          <label key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: INK, cursor: 'pointer' }}>
+            <input type="checkbox" checked={picked.has(r.id)} onChange={() => toggle(r.id)} /> {r.patient_name} · {r.service} · {r.provider}
+          </label>
+        ))}
+      </div>
+      {problems.length > 0 && (
+        <div role="alert" style={{ marginTop: 8, fontSize: 12.5, color: TONES.danger.fg }}>
+          Not approved: {problems.join('; ')}
+        </div>
+      )}
     </div>
   );
 }
