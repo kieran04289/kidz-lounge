@@ -336,21 +336,32 @@ function calculateAge(dobStr) {
   return `${years} yrs`;
 }
 
-function findNextAppointment(appointments) {
+// How far ahead the banner looks for weekly sessions (one-off rows on file
+// are searched whatever the date).
+const NEXT_APPT_DAYS = 90;
+const NOT_HAPPENING = ['Canceled', 'No Show'];
+
+// `appointments` = the rows on file; `ahead` = the next NEXT_APPT_DAYS with
+// weekly sessions included. The rows on file alone missed every weekly
+// session (a child on a series showed "None scheduled", or a far one-off),
+// the date was UTC (after 8 PM "today" was tomorrow), and No Show / HOLD
+// sessions counted.
+function findNextAppointment(appointments, ahead) {
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
+  const todayStr = dateToInputValue(now);
   const nowTime = now.toTimeString().slice(0, 8);
-  const upcoming = (appointments || [])
-    .filter(a => a.appointment_status !== 'Canceled')
+  const upcoming = [...(ahead || []), ...(appointments || [])]
+    .filter(a => !a.deleted && !NOT_HAPPENING.includes(a.appointment_status) && !String(a.appointment_status || '').includes('HOLD'))
     .filter(a => a.appointment_date > todayStr || (a.appointment_date === todayStr && a.appointment_time >= nowTime))
     .sort((a, b) => (a.appointment_date + a.appointment_time).localeCompare(b.appointment_date + b.appointment_time));
   return upcoming[0] || null;
 }
 
-function PatientBanner({ patient, appointments }) {
+function PatientBanner({ patient, appointments, ahead }) {
   const isMobile = useIsMobile(PATIENT_CHART_PHONE_BREAKPOINT);
   const age = calculateAge(patient.Date_of_Birth);
-  const nextAppt = findNextAppointment(appointments);
+  // Another patient's rows can linger for a moment after switching charts.
+  const nextAppt = findNextAppointment(appointments, (ahead || []).filter(a => a.patient_name === patient.Name));
   const programValues = (patient.Program || '').split(',').map(s => s.trim()).filter(Boolean);
 
   const facts = [
@@ -1216,6 +1227,8 @@ export default function PatientChartPage() {
   const isMobile = useIsMobile(PATIENT_CHART_PHONE_BREAKPOINT);
   const [patient, setPatient] = useState(null);
   const [appointments, setAppointments] = useState([]);
+  // The next NEXT_APPT_DAYS with weekly sessions included, for the banner.
+  const [ahead, setAhead] = useState([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const { user } = useAuth();
@@ -1233,7 +1246,18 @@ export default function PatientChartPage() {
     return () => { alive = false; };
   }, [patientId, user, formsReload]);
   const [editingPatient, setEditingPatient] = useState(false);
-  const reloadAppointments = () => { api.getPatientAppointments(name).then(a => setAppointments(a || [])).catch(() => {}); };
+  const loadAhead = () => {
+    const start = new Date();
+    const end = new Date(start);
+    end.setDate(end.getDate() + NEXT_APPT_DAYS);
+    api.getAppointmentsWindow(dateToInputValue(start), dateToInputValue(end), name)
+      .then(rows => setAhead((rows || []).filter(a => a.patient_name === name)))
+      .catch(() => setAhead([]));
+  };
+  const reloadAppointments = () => {
+    api.getPatientAppointments(name).then(a => setAppointments(a || [])).catch(() => {});
+    loadAhead();
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -1259,6 +1283,9 @@ export default function PatientChartPage() {
     })();
     return () => { cancelled = true; };
   }, [name]);
+
+  // Fetched in the callback, not set in the effect body (lint rule).
+  useEffect(() => { loadAhead(); }, [name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return <div style={{ padding: 40, fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', color: BRAND.muted, fontSize: 13 }}>Loading chart...</div>;
@@ -1292,7 +1319,7 @@ export default function PatientChartPage() {
 
   return (
     <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', display: 'flex', flexDirection: 'column', height: '100vh', boxSizing: 'border-box' }}>
-      <PatientBanner patient={patient} appointments={appointments} />
+      <PatientBanner patient={patient} appointments={appointments} ahead={ahead} />
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: isMobile ? 'column' : 'row' }}>
         <Sidebar tabs={tabs} activeTab={activeTab} setActiveTab={setActiveTab} onBack={() => navigate(-1)} onEdit={() => setEditingPatient(true)} />
         <div style={{
