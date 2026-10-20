@@ -31,11 +31,13 @@ function authStatus(a) {
 }
 const referrer = (r) => (r ? `${[r.referring_first, r.referring_last].filter(Boolean).join(' ')} (NPI ${r.referring_npi})` : null);
 
+// Label then value beside it (Oct 2026: values pushed to the far right of a
+// wide section were hard to read across); stacks on a narrow screen.
 function Row({ label, children }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, padding: '5px 0', borderBottom: `1px solid ${LINE}` }}>
-      <span style={{ color: MUTED, flexShrink: 0 }}>{label}</span>
-      <span style={{ color: INK, fontWeight: 500, textAlign: 'right', minWidth: 0 }}>{children}</span>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), max-content))', columnGap: 20, rowGap: 2, fontSize: 13.5, padding: '6px 0', borderBottom: `1px solid ${LINE}` }}>
+      <span style={{ color: MUTED, width: 180 }}>{label}</span>
+      <span style={{ color: INK, minWidth: 0, overflowWrap: 'anywhere' }}>{children}</span>
     </div>
   );
 }

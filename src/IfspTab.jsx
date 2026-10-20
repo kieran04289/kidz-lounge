@@ -34,11 +34,13 @@ const ELIGIBLE = [['', 'Not known yet'], ['pending', 'Being evaluated'], ['yes',
 const fmt = (s) => (s ? new Date(`${String(s).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null);
 const daysBetween = (from, to) => Math.round((new Date(`${to}T00:00:00`) - new Date(`${from}T00:00:00`)) / 86400000);
 
+// Label then value beside it (Oct 2026: values pushed to the far right of a
+// wide section were hard to read across); stacks on a narrow screen.
 function Row({ label, children }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, padding: '5px 0', borderBottom: `1px solid ${LINE}` }}>
-      <span style={{ color: MUTED, flexShrink: 0 }}>{label}</span>
-      <span style={{ color: INK, fontWeight: 500, textAlign: 'right', minWidth: 0, overflowWrap: 'anywhere' }}>{children}</span>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), max-content))', columnGap: 20, rowGap: 2, fontSize: 13.5, padding: '6px 0', borderBottom: `1px solid ${LINE}` }}>
+      <span style={{ color: MUTED, width: 180 }}>{label}</span>
+      <span style={{ color: INK, minWidth: 0, overflowWrap: 'anywhere' }}>{children}</span>
     </div>
   );
 }

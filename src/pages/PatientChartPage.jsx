@@ -21,6 +21,7 @@ import { EiOverview } from '../EiWorkflow';
 import { SessionNotesChartTab } from '../SessionNotes';
 import { featureOn } from '../brand';
 import { rxApplies } from '../patientOptions';
+import { Tag } from '../dashboardUi';
 
 // The Eval tag, same on the schedule (SchedulePage.jsx).
 const EVAL_BLUE = '#1D4ED8';
@@ -59,15 +60,33 @@ function formatTime(timeStr) {
   return `${displayHour}:${String(m).padStart(2, '0')} ${period}`;
 }
 
+// PedsDesk's chart (GROUPED_CHART, below; Kieran, Oct 2026: "still very
+// clunky to read"): sentence-case section titles, plain white sections with
+// thin borders, facts as label over value in a grid, small tinted status
+// tags, and a wide two-column Overview. Kidz Lounge keeps its look.
 function sectionHeaderStyle() {
+  if (GROUPED_CHART) return { fontSize: 14, fontWeight: 600, color: 'var(--brand-ink)', margin: '0 0 8px 0' };
   return { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: BRAND.muted, margin: '0 0 8px 0' };
 }
 function cardStyle() {
+  if (GROUPED_CHART) return { border: '1px solid var(--brand-border)', borderRadius: 8, background: 'white', padding: '14px 18px', marginBottom: 22 };
   return { border: `1.5px solid ${BRAND.box}`, borderRadius: 3, background: 'var(--brand-wash)', padding: '12px 16px', marginBottom: 20 };
+}
+// A section of facts: label over value, as many across as fit.
+function factsStyle() {
+  return { ...cardStyle(), display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '14px 24px' };
 }
 
 function InfoRow({ label, value }) {
   if (!value) return null;
+  if (GROUPED_CHART) {
+    return (
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12, color: BRAND.muted, marginBottom: 2 }}>{label}</div>
+        <div style={{ fontSize: 14, color: 'var(--brand-ink)', overflowWrap: 'anywhere' }}>{value}</div>
+      </div>
+    );
+  }
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13, padding: '5px 0', borderBottom: '1px solid var(--brand-line)' }}>
       <span style={{ color: BRAND.muted }}>{label}</span>
@@ -198,8 +217,15 @@ function ProgramHistory({ patient, onChanged }) {
   );
 }
 
+// One person in a list (Care team): just the name in PedsDesk's chart; Kidz
+// Lounge keeps its "Provider ... name" row.
+function NameRow({ name }) {
+  if (!GROUPED_CHART) return <InfoRow label="Provider" value={name} />;
+  return <div style={{ fontSize: 14, color: 'var(--brand-ink)', padding: '6px 0', borderBottom: '1px solid var(--brand-line)' }}>{name}</div>;
+}
+
 function EmptyNote({ children }) {
-  return <p style={{ fontSize: 13, color: BRAND.muted, margin: 0, fontStyle: 'italic' }}>{children}</p>;
+  return <p style={{ fontSize: 13, color: BRAND.muted, margin: 0, fontStyle: GROUPED_CHART ? 'normal' : 'italic' }}>{children}</p>;
 }
 
 // One appointment in the chart's lists. Click (or Enter) opens it in the
@@ -231,6 +257,11 @@ function AppointmentRow({ apt, onOpen }) {
           {apt.provider}{apt.treatment_area ? ` \u00b7 ${roomDisplayText(apt.treatment_area)}` : ''} &middot; {apt.duration}min
         </div>
       </div>
+      {GROUPED_CHART ? (
+        <Tag tone={bad ? 'danger' : apt.appointment_status === 'Confirmed' ? 'success' : 'neutral'}>
+          {apt.appointment_status === 'Canceled' && apt.missed_by === 'provider' ? 'Canceled · Provider' : apt.appointment_status}
+        </Tag>
+      ) : (
       <span style={{
         fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap',
         color: bad ? '#A32D2D' : BRAND.brassText,
@@ -239,6 +270,7 @@ function AppointmentRow({ apt, onOpen }) {
       }}>
         {apt.appointment_status}
       </span>
+      )}
     </div>
   );
 }
@@ -271,10 +303,11 @@ const GROUP_OF = {
   documents: 'office', 'care-team': 'office', 'ei-billing': 'office', 'power-forms': 'office',
 };
 const GROUPED_ORDER = ['overview', 'ifsp', 'services', 'session-notes', 'appointments', 'documents', 'care-team', 'ei-billing', 'power-forms'];
+const GROUPED_LABELS = { 'care-team': 'Care team' };
 function groupTabs(tabs) {
   return [...tabs]
     .sort((a, b) => GROUPED_ORDER.indexOf(a.key) - GROUPED_ORDER.indexOf(b.key))
-    .map(t => ({ ...t, group: GROUP_OF[t.key] || null }));
+    .map(t => ({ ...t, label: GROUPED_LABELS[t.key] || t.label, group: GROUP_OF[t.key] || null }));
 }
 function ChartTabHeader({ tab, status }) {
   return (
@@ -463,20 +496,81 @@ function Sidebar({ tabs, activeTab, setActiveTab, onBack, onEdit }) {
   );
 }
 
+// PedsDesk's Overview: a main column (what needs doing and current services
+// for an EI child, then the child's details, programs and notes) and a side
+// column of contacts and links. Nothing the banner already shows (MRN, age,
+// next appointment, IFSP end, report date, picture consent) is repeated, and
+// a section with nothing in it is a single line.
+function GroupedOverview({ patient, isMobile, onPatientChanged, formsToReview, onOpenTab }) {
+  const ei = isEiPatient(patient);
+  const rx = rxApplies(patient.Program, patient.Services) || patient.RX_Date;
+  const facts = [
+    ['Date of birth', formatDateMMDDYYYY(patient.Date_of_Birth)],
+    [ei ? 'EI child ID' : 'ID #', patient.ID_Number],
+    ...(!ei ? [['Services', patient.Services], ['Mandate', patient.Mandate]] : []),
+    ['IFSP', patient.IFSP_Type],
+    ['IFSP start', formatDateMMDDYYYY(patient.IFSP_Start_Date)],
+    ...(rx ? [['RX date', formatDateMMDDYYYY(patient.RX_Date)], ['RX expires', formatDateMMDDYYYY(patient.RX_Expiration)]] : []),
+  ].filter(([, v]) => v);
+  const contact = (title, rows) => {
+    const shown = rows.filter(([, v]) => v);
+    return (
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: BRAND.muted, marginBottom: 4 }}>{title}</div>
+        {shown.length ? shown.map(([k, v]) => (
+          <div key={k} style={{ fontSize: 14, color: 'var(--brand-ink)', lineHeight: 1.5, overflowWrap: 'anywhere' }}>{v}</div>
+        )) : <div style={{ fontSize: 13, color: BRAND.muted }}>None on file</div>}
+      </div>
+    );
+  };
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 2fr) minmax(0, 1fr)', gap: 24, alignItems: 'start' }}>
+      <div style={{ minWidth: 0 }}>
+        {ei && <EiOverview patient={patient} headerStyle={sectionHeaderStyle()} boxStyle={cardStyle()} formsToReview={formsToReview} onOpenTab={onOpenTab} />}
+        <p style={sectionHeaderStyle()}>Details</p>
+        {facts.length
+          ? <div style={factsStyle()}>{facts.map(([k, v]) => <InfoRow key={k} label={k} value={v} />)}</div>
+          : <div style={cardStyle()}><EmptyNote>No details on file yet.</EmptyNote></div>}
+        <ProgramHistory patient={patient} onChanged={onPatientChanged} />
+        {patient.Scheduling_Notes && (
+          <>
+            <p style={sectionHeaderStyle()}>Notes</p>
+            <div style={cardStyle()}>
+              <p style={{ fontSize: 14, color: 'var(--brand-ink)', whiteSpace: 'pre-wrap', margin: 0, lineHeight: 1.5 }}><Linkify text={patient.Scheduling_Notes} /></p>
+            </div>
+          </>
+        )}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <p style={sectionHeaderStyle()}>Contacts</p>
+        <div style={cardStyle()}>
+          {contact('Parent / guardian', [
+            ['name', [patient.Parent_Name, patient.Relationship_To_Patient && `(${patient.Relationship_To_Patient})`].filter(Boolean).join(' ')],
+            ['phone', patient.Parent_Phone], ['email', patient.Parent_Email],
+          ])}
+          {contact(featureOn('ei') ? 'Service coordinator' : 'SC / admin contact', [['name', patient.SC_Admin_Name], ['phone', patient.SC_Admin_Phone], ['email', patient.SC_Admin_Email]])}
+          <div>
+            <div style={{ fontSize: 12, color: BRAND.muted, marginBottom: 4 }}>Case manager</div>
+            <div style={{ fontSize: 14, color: patient.Case_Manager ? 'var(--brand-ink)' : BRAND.muted }}>{patient.Case_Manager || 'None assigned'}</div>
+          </div>
+        </div>
+        <ChartLinks patient={patient} onChanged={onPatientChanged} />
+      </div>
+    </div>
+  );
+}
+
 function OverviewTab({ patient, isMobile, onPatientChanged, formsToReview = 0, onOpenTab }) {
-  // PedsDesk's EI children: what needs doing and current services first
-  // (src/EiWorkflow.jsx), and nothing the banner or that list already shows.
-  const eiView = GROUPED_CHART && isEiPatient(patient);
+  if (GROUPED_CHART) return <GroupedOverview patient={patient} isMobile={isMobile} onPatientChanged={onPatientChanged} formsToReview={formsToReview} onOpenTab={onOpenTab} />;
   return (
     <div>
-      {eiView && <EiOverview patient={patient} headerStyle={sectionHeaderStyle()} boxStyle={cardStyle()} formsToReview={formsToReview} onOpenTab={onOpenTab} />}
       <p style={sectionHeaderStyle()}>Demographics</p>
       <div style={cardStyle()}>
         <InfoRow label="Date of Birth" value={formatDateMMDDYYYY(patient.Date_of_Birth)} />
-        {!eiView && <InfoRow label="MRN" value={patient.mrn} />}
-        <InfoRow label={eiView ? 'EI child ID' : 'ID Number'} value={patient.ID_Number} />
-        {!eiView && <InfoRow label="Services" value={patient.Services} />}
-        {!eiView && <InfoRow label="Mandate" value={patient.Mandate} />}
+        <InfoRow label="MRN" value={patient.mrn} />
+        <InfoRow label="ID Number" value={patient.ID_Number} />
+        <InfoRow label="Services" value={patient.Services} />
+        <InfoRow label="Mandate" value={patient.Mandate} />
         <InfoRow label="Picture Consent" value={patient.Picture_Consent === true ? 'Yes' : patient.Picture_Consent === false ? 'No' : null} />
         {!patient.Date_of_Birth && !patient.ID_Number && !patient.Services && <EmptyNote>None on file</EmptyNote>}
       </div>
@@ -485,7 +579,7 @@ function OverviewTab({ patient, isMobile, onPatientChanged, formsToReview = 0, o
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 20 }}>
         <div>
-          <p style={sectionHeaderStyle()}>Parent / Guardian</p>
+          <p style={sectionHeaderStyle()}>Parent / guardian</p>
           <div style={cardStyle()}>
             <InfoRow label="Name" value={patient.Parent_Name} />
             <InfoRow label="Relationship" value={patient.Relationship_To_Patient} />
@@ -495,7 +589,7 @@ function OverviewTab({ patient, isMobile, onPatientChanged, formsToReview = 0, o
           </div>
         </div>
         <div>
-          <p style={sectionHeaderStyle()}>{featureOn('ei') ? 'Service Coordinator' : 'SC / Admin Contact'}</p>
+          <p style={sectionHeaderStyle()}>{featureOn('ei') ? 'Service coordinator' : 'SC / admin contact'}</p>
           <div style={cardStyle()}>
             <InfoRow label="Name" value={patient.SC_Admin_Name} />
             <InfoRow label="Phone" value={patient.SC_Admin_Phone} />
@@ -505,14 +599,13 @@ function OverviewTab({ patient, isMobile, onPatientChanged, formsToReview = 0, o
         </div>
       </div>
 
-      <p style={sectionHeaderStyle()}>{eiView ? 'IFSP & case manager' : 'IFSP & Authorization'}</p>
+      <p style={sectionHeaderStyle()}>IFSP & Authorization</p>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 20 }}>
         <div style={cardStyle()}>
           <InfoRow label="IFSP Type" value={patient.IFSP_Type} />
           <InfoRow label="IFSP Start" value={formatDateMMDDYYYY(patient.IFSP_Start_Date)} />
-          {/* The banner shows these for an EI child. */}
-          {!eiView && <InfoRow label="IFSP End" value={formatDateMMDDYYYY(patient.IFSP_End_Date)} />}
-          {!eiView && <InfoRow label="Report Date" value={formatDateMMDDYYYY(patient.Report_Date)} />}
+          <InfoRow label="IFSP End" value={formatDateMMDDYYYY(patient.IFSP_End_Date)} />
+          <InfoRow label="Report Date" value={formatDateMMDDYYYY(patient.Report_Date)} />
           {!patient.IFSP_Type && !patient.IFSP_Start_Date && <EmptyNote>None on file</EmptyNote>}
         </div>
         <div style={cardStyle()}>
@@ -614,7 +707,7 @@ function AppointmentsTab({ patient, appointments, onChanged }) {
         </button>
       </div>
 
-      <p style={sectionHeaderStyle()}>Upcoming (Next 2 Weeks)</p>
+      <p style={sectionHeaderStyle()}>Upcoming (next 2 weeks)</p>
       <div style={{ ...cardStyle(), padding: '4px 16px' }}>
         {nextTwoWeeks === null ? (
           <EmptyNote>Loading...</EmptyNote>
@@ -625,7 +718,7 @@ function AppointmentsTab({ patient, appointments, onChanged }) {
         )}
       </div>
 
-      <p style={sectionHeaderStyle()}>Previous Appointments</p>
+      <p style={sectionHeaderStyle()}>Previous appointments</p>
       <div style={{ ...cardStyle(), padding: '4px 16px', maxHeight: 460, overflowY: 'auto' }}>
         {past.length === 0 ? (
           <EmptyNote>{filtering ? 'No previous appointments match these filters.' : 'No previous appointments on file.'}</EmptyNote>
@@ -1070,7 +1163,7 @@ function CareTeamTab({ patient, appointments }) {
 
   return (
     <div>
-      <p style={sectionHeaderStyle()}>Quick Actions</p>
+      <p style={sectionHeaderStyle()}>Quick actions</p>
       <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
         <button
           onClick={() => openDrawerWithPrefill(`Re: ${patient.Name} - `)}
@@ -1086,26 +1179,26 @@ function CareTeamTab({ patient, appointments }) {
         </button>
       </div>
 
-      <p style={sectionHeaderStyle()}>Case Management</p>
+      <p style={sectionHeaderStyle()}>Case management</p>
       <div style={cardStyle()}>
         <InfoRow label="Case Manager" value={patient.Case_Manager} />
         {!patient.Case_Manager && <EmptyNote>No case manager assigned.</EmptyNote>}
       </div>
 
-      <p style={sectionHeaderStyle()}>Current Providers</p>
+      <p style={sectionHeaderStyle()}>Current providers</p>
       <div style={cardStyle()}>
         {currentProviders.length === 0 ? (
           <EmptyNote>Not on any provider's caseload: no appointments this month or later.</EmptyNote>
         ) : (
-          currentProviders.map(p => <InfoRow key={p} label="Provider" value={p} />)
+          currentProviders.map(p => <NameRow key={p} name={p} />)
         )}
       </div>
 
       {pastOnlyProviders.length > 0 && (
         <>
-          <p style={sectionHeaderStyle()}>Previously Seen</p>
+          <p style={sectionHeaderStyle()}>Previously seen</p>
           <div style={cardStyle()}>
-            {pastOnlyProviders.map(p => <InfoRow key={p} label="Provider" value={p} />)}
+            {pastOnlyProviders.map(p => <NameRow key={p} name={p} />)}
           </div>
         </>
       )}
@@ -1196,7 +1289,10 @@ export default function PatientChartPage() {
           flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
           overflowY: activeTab === 'documents' ? 'hidden' : 'auto',
           padding: activeTab === 'documents' ? (isMobile ? '12px 12px' : '20px 24px') : (isMobile ? '16px 16px 40px' : '28px 32px 60px'),
-          maxWidth: activeTab === 'documents' || isMobile ? 'none' : 820,
+          // PedsDesk: the Overview uses the width for its two columns; the
+          // other tabs stay at a reading width so label / value rows don't
+          // stretch across the screen. Kidz Lounge keeps 820.
+          maxWidth: activeTab === 'documents' || isMobile ? 'none' : GROUPED_CHART ? (activeTab === 'overview' ? 1180 : 900) : 820,
         }}>
           {GROUPED_CHART && activeTabDef && <ChartTabHeader tab={activeTabDef} status={tabStatus} />}
           {activeTab === 'overview' && <OverviewTab patient={patient} isMobile={isMobile} formsToReview={formsToReview} onOpenTab={(k) => tabs.some(t => t.key === k) && setActiveTab(k)} onPatientChanged={() => api.getPatient(name).then(p => p && setPatient(p)).catch(() => {})} />}
