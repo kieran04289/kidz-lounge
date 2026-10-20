@@ -39,7 +39,6 @@ function navGroups(user) {
     { label: 'Patients', items: [
       { to: '/patients', label: 'Patients', keywords: 'children charts add patient' },
       { to: '/waitlist', label: 'Waitlist', keywords: 'referrals waiting' },
-      { to: '/provider-directory', label: 'Provider directory', keywords: 'therapists phone npi license' },
     ] },
     ...(featureOn('ei') ? [{ label: 'Clinical', items: [
       { to: '/session-notes', label: 'Session notes', keywords: 'notes sign parent co-sign service log' },
@@ -49,11 +48,13 @@ function navGroups(user) {
     { label: 'Office', items: [
       ...(featureOn('mandates') ? [
         { to: '/billing', label: 'Payroll', keywords: 'billing sheets overview payroll export units totals reviewed' },
-        { to: '/mandates', label: 'Mandates', keywords: 'mandates make-ups makeups missed sessions needs attention owed' },
-        ...(manage ? [{ to: '/ei-hub', label: 'EI-Hub claims', keywords: 'ei-hub claims 837 billing import children authorizations setup' }] : []),
+        // EI Hub: mandates + claims (Kieran, Oct 2026). Claims inside are office-only.
+        { to: '/ei-hub', label: 'EI Hub', keywords: 'ei-hub mandates make-ups makeups missed sessions needs attention owed claims 837 billing import children authorizations setup' },
       ] : [{ to: '/billing', label: 'Billing', keywords: 'billing sheet ei-hub claims' }]),
-      ...(featureOn('ei') && manage ? [{ to: '/compliance', label: 'Compliance', keywords: 'late overdue audit authorizations credentials turning 3' }] : []),
-      ...(manage ? [{ to: '/credentials', label: 'Credentials', keywords: 'licenses expiring staff' }] : []),
+      // Compliance includes Credentials (Staff); without `ei` there's no
+      // Compliance page, so Credentials keeps its own item.
+      ...(featureOn('ei') && manage ? [{ to: '/compliance', label: 'Compliance', keywords: 'late overdue audit authorizations credentials licenses expiring staff turning 3' }] : []),
+      ...(!featureOn('ei') && manage ? [{ to: '/credentials', label: 'Credentials', keywords: 'licenses expiring staff' }] : []),
       ...(canAdminister(user) ? [{ to: '/power-forms', label: 'Power Forms', keywords: 'forms templates packets parents' }] : []),
     ] },
   ];
@@ -61,7 +62,9 @@ function navGroups(user) {
 const isActivePath = (pathname, item) => (item.end ? pathname === item.to : pathname === item.to || pathname.startsWith(`${item.to}/`))
   || (item.to === '/patients' && pathname.startsWith('/patients/'));
 
-// One nav menu (desktop): opens on hover, and on click for touch and keyboard.
+// One nav menu (desktop): opens on hover. The title itself goes to the
+// menu's first page (Kieran, Oct 2026); the caret beside it opens the menu
+// by click, for touch screens and the keyboard.
 function GroupMenu({ group }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
@@ -81,11 +84,16 @@ function GroupMenu({ group }) {
     <div ref={wrapRef} style={{ position: 'relative' }}
       onMouseEnter={() => { clearTimeout(closeTimer.current); setOpen(true); }}
       onMouseLeave={() => { clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setOpen(false), 150); }}>
-      <button type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(true)}
-        style={{ ...tabStyle({ isActive: active }), display: 'flex', alignItems: 'center', gap: 6, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-        {group.label}
-        <Caret open={open} />
-      </button>
+      <div style={{ ...tabStyle({ isActive: active }), display: 'flex', alignItems: 'center', gap: 2, padding: 0 }}>
+        <NavLink to={group.items[0].to} end={group.items[0].end} onClick={() => setOpen(false)}
+          style={{ color: 'inherit', textDecoration: 'none', padding: '6px 2px 6px 14px' }}>
+          {group.label}
+        </NavLink>
+        <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={`${group.label} menu`} onClick={() => setOpen(o => !o)}
+          style={{ display: 'flex', alignItems: 'center', padding: '6px 10px 6px 4px', border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <Caret open={open} />
+        </button>
+      </div>
       {open && (
         <div style={{ position: 'absolute', top: '100%', left: 0, paddingTop: 6, zIndex: 60 }}>
           <div role="menu" style={{ minWidth: 200, background: 'white', border: '1px solid var(--brand-border2)', borderRadius: 8, boxShadow: '0 10px 24px color-mix(in srgb, var(--brand-ink) 12%, transparent)', padding: '6px 0' }}>
@@ -331,6 +339,8 @@ export default function NavBar() {
     ...groups.flatMap(g => g.items.map(i => ({ ...i, group: g.label }))),
     ...accountLinks.map(l => ({ to: l.to, label: l.label, group: 'Account' })),
     { to: '/manual', label: 'User manual', group: 'Help', keywords: 'how to guide' },
+    // Out of the Patients menu (Oct 2026), still in the footer and here.
+    { to: '/provider-directory', label: 'Provider directory', group: 'Help', keywords: 'therapists phone npi license' },
     { to: '/support', label: 'Help & Support', group: 'Help', keywords: 'ticket problem' },
   ] : [];
 

@@ -111,7 +111,7 @@ export function ProgressReportsPage() {
   return (
     <div style={{ background: PAGE_BG, fontFamily: FONT, minHeight: '100%' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '18px 14px 40px' : '28px 28px 56px' }}>
-        <PageHeader title="Progress reports" isMobile={isMobile} actions={<Link to="/eval-reports" style={{ fontSize: 13.5, color: 'var(--brand-primary)' }}>Evaluation reports →</Link>} />
+        <PageHeader title="Progress reports" isMobile={isMobile} />
         <UnderlineTabs label="Progress report views" active={tab} onPick={setTab} style={{ marginBottom: 16 }}
           tabs={TABS.map(t => ({ key: t.key, label: t.label, count: data ? counts[t.key] : null, alert: (t.key === 'todo' && counts.todo) || (t.key === 'office' && manager && counts.office) ? 'warning' : null }))} />
         <Card pad={isMobile ? 14 : 20}>

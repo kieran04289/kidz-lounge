@@ -38,10 +38,14 @@ function CodesEditor({ session, allowed, onSaved, onCancel }) {
   const [codes, setCodes] = useState(session.codes.length ? session.codes : Array(session.default_lines || 1).fill(''));
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  // A signed session note's codes are the session's codes (API
+  // lib/sessionCodes.js): changing them here needs a reason.
+  const [reason, setReason] = useState('');
   const save = async (list) => {
+    if (session.note_signed && !reason.trim()) { setError('The session note is signed with these codes. Give a reason to re-code it.'); return; }
     setBusy(true); setError(null);
     try {
-      await api.saveEiSessionCodes({ session_key: session.key, service: session.service, codes: list });
+      await api.saveEiSessionCodes({ session_key: session.key, service: session.service, codes: list, reason: reason.trim() || undefined });
       onSaved();
     } catch (err) {
       setError(err.message);
@@ -60,6 +64,10 @@ function CodesEditor({ session, allowed, onSaved, onCancel }) {
           {codes.length > 1 && <button type="button" aria-label={`Remove line ${i + 1}`} onClick={() => setCodes(list => list.filter((_, j) => j !== i))} style={buttonStyle('text')}>×</button>}
         </div>
       ))}
+      {session.note_signed && (
+        <input value={reason} onChange={e => setReason(e.target.value)} maxLength={500} aria-label="Reason for re-coding a signed session"
+          placeholder="Reason (the note is signed with the current codes)" style={{ ...eiInput, padding: '4px 6px', marginBottom: 4 }} />
+      )}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         {codes.length < 8 && <button type="button" onClick={() => setCodes(list => [...list, list[list.length - 1] || ''])} style={buttonStyle('text')}>+ Line</button>}
         <button type="button" disabled={busy} onClick={() => save(codes)} style={buttonStyle('primary', { padding: '4px 10px' })}>Save</button>

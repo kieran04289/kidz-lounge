@@ -52,7 +52,6 @@ export function EvalReportsPage() {
   return (
     <div style={{ background: PAGE_BG, fontFamily: FONT, minHeight: '100%' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '18px 14px 40px' : '28px 28px 56px' }}>
-        <Link to="/progress-reports" style={{ fontSize: 13, color: 'var(--brand-primary)' }}>← Progress reports</Link>
         <PageHeader title="Evaluation reports" isMobile={isMobile} actions={(
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button type="button" aria-label="Previous month" onClick={() => setMonth(m => shiftMonth(m, -1))} style={buttonStyle('secondary', { padding: '6px 10px' })}>‹</button>

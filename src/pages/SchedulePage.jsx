@@ -6,6 +6,8 @@ import { CENTER, SETTINGS, isOffsite, offsiteLocation, offsiteSetting, settingOf
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { hoursOkOf, canOkayHours, setHoursOk } from '../hoursOk';
+import { choiceStyle } from '../uiTokens';
+import { opensWindowForStatus } from '../eiCancel';
 import { useIsMobile } from '../useIsMobile';
 import { MeetingAgendaEditor, MeetingAgendaPlaceholder } from '../MeetingAgenda';
 import { useStaffNames } from '../staffDirectory';
@@ -611,7 +613,7 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
             fontSize: 10, fontWeight: 600, borderRadius: 10, padding: '1px 7px', cursor: onStatusClick ? 'pointer' : 'default',
             background: `color-mix(in srgb, ${color} 16%, white)`, color, whiteSpace: 'nowrap', display: 'inline-block',
           }}>
-          {apt.appointment_status}{apt.appointment_status === 'Canceled' && CANCEL_REASON_SHORT[apt.cancel_reason] ? ` · ${CANCEL_REASON_SHORT[apt.cancel_reason]}` : ''}
+          {apt.appointment_status}{apt.appointment_status === 'Canceled' && CANCEL_REASON_SHORT[apt.cancel_reason] ? ` · ${CANCEL_REASON_SHORT[apt.cancel_reason]}` : apt.appointment_status === 'Canceled' && apt.missed_by === 'provider' ? ' · Provider' : ''}
         </span>
       </div>
       {alertCount > 0 && (
@@ -1632,6 +1634,7 @@ function ScheduleApp() {
 
   const handleStatusChange = async (apt, newStatus) => {
     setStatusDropdown(null);
+    if (await opensWindowForStatus(apt, newStatus)) { setEditingAppointment(apt); setPrefill({ startStatus: newStatus }); setShowModal(true); return; }
     await applyQuickEdit(apt, { appointment_status: newStatus, treatment_area: areaAfterStatus(newStatus, apt.treatment_area) });
     loadDayRef.current?.();
   };
@@ -2673,7 +2676,9 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
     : settingChoice === 'Center' ? (centerRoom || CENTER)
     : settingChoice ? makeOffsiteArea(offsiteLocationText, settingChoice) : '';
   const areaChanged = areaTouched && treatmentArea !== initialArea;
-  const [status, setStatus] = useState(existing ? (existing.appointment_status || STATUS_OPTIONS[0]) : STATUS_OPTIONS[0]);
+  // prefill.startStatus: opened from a card's status menu (Canceled on an EI
+  // session asks who cancelled here instead of saving straight away).
+  const [status, setStatus] = useState(existing ? (prefill?.startStatus || existing.appointment_status || STATUS_OPTIONS[0]) : STATUS_OPTIONS[0]);
   // Only for a canceled offsite session; anything else saves no reason.
   const [cancelReason, setCancelReason] = useState(existing?.cancel_reason || '');
   const reasonToSave = status === 'Canceled' && isOffsite(treatmentArea) ? (cancelReason || null) : null;
@@ -2694,9 +2699,23 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
       .catch(() => {});
     return () => { alive = false; };
   }, [mandatesOn, missedStatus, patientConfirmed, patientSearch, provider, appointmentDate]);
-  const askAbsence = mandatesOn && missedStatus && billsAsEI && reasonToSave !== 'holiday' && reasonToSave !== 'emergency';
+  // Who cancelled an EI session (Kieran, Oct 2026; kidz-lounge-api
+  // lib/missedBy.js): required for a Canceled EI session. The provider
+  // cancelling bills PA, owes no family make-up and needs the family and SC
+  // told 5 business days ahead; a family cancellation (and every No Show)
+  // is a child absence, with its reason as before.
+  const eiMissed = mandatesOn && missedStatus && billsAsEI && reasonToSave !== 'holiday' && reasonToSave !== 'emergency';
+  const askMissedBy = eiMissed && status === 'Canceled';
+  const [missedBy, setMissedBy] = useState(existing?.missed_by || '');
+  const [familyNotified, setFamilyNotified] = useState(false);
+  const providerCancelled = askMissedBy && missedBy === 'provider';
+  const askAbsence = eiMissed && !providerCancelled;
   // Sent only where the feature is on, so other clinics never clear one.
-  const absenceField = mandatesOn ? { absence_reason: askAbsence ? (absenceReason || null) : null } : {};
+  const absenceField = mandatesOn ? {
+    absence_reason: askAbsence ? (absenceReason || null) : null,
+    missed_by: eiMissed ? (status === 'No Show' ? 'family' : (missedBy || null)) : null,
+    ...(providerCancelled && familyNotified ? { family_notified: true } : {}),
+  } : {};
   // prefill.makeupFor: booking a make-up for this canceled / no-show
   // appointment -- one time only (no repeat), linked to it on save.
   const makeupFor = !existing ? prefill?.makeupFor || null : null;
@@ -2817,6 +2836,27 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
     return () => { cancelled = true; clearTimeout(timer); };
   }, [hoursCheckKey, provider, appointmentDate, appointmentTime, duration]);
   const outsideContract = !!hoursCheckKey && hoursCheck.key === hoursCheckKey && hoursCheck.outside;
+  // PedsDesk ("ei"; Kieran, Oct 2026): booking an EI session that no
+  // mandate (office: or authorization) covers warns here; saving is allowed
+  // and it then shows under the chart's "Booked sessions to check".
+  const coverageKey = featureOn('ei') && patientConfirmed && patientSearch && provider && appointmentDate && !MISSED_STATUSES.includes(status) && status !== HOLD_STATUS && !isHoldPatient(patientSearch)
+    ? [patientSearch, provider, appointmentDate].join('|') : null;
+  const [coverage, setCoverage] = useState({ key: null, data: null });
+  useEffect(() => {
+    if (!coverageKey) return undefined;
+    let alive = true;
+    const timer = setTimeout(() => {
+      api.getEiCoverage(patientSearch, provider, appointmentDate)
+        .then(d => { if (alive) setCoverage({ key: coverageKey, data: d }); })
+        .catch(() => {});
+    }, 350);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [coverageKey, patientSearch, provider, appointmentDate]);
+  const cov = coverageKey && coverage.key === coverageKey ? coverage.data : null;
+  const coverageGaps = cov?.ei ? [
+    ...(!cov.mandate ? [`No ${cov.service} mandate covering this date`] : []),
+    ...(cov.authorization === false ? [`No ${cov.service} authorization covering this date`] : []),
+  ] : [];
   const [hoursOkTick, setHoursOkTick] = useState(null); // true = okay, false = leave flagged, null = not picked
   const [hoursOkNote, setHoursOkNote] = useState('');
   const [hoursOkTakenBack, setHoursOkTakenBack] = useState(false);
@@ -2883,6 +2923,10 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
   const handleSave = async () => {
     if (!patientConfirmed || !appointmentDate || !appointmentTime || !provider) {
       setError('Patient (selected from the list), date, time, and provider are required.');
+      return;
+    }
+    if (askMissedBy && !missedBy) {
+      setError('Choose who cancelled this EI session: the family or the provider.');
       return;
     }
     // Any time on any day (Oct 15 2026): off the 8-6 grid it shows in the
@@ -3467,6 +3511,12 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
               />
             )}
 
+            {coverageGaps.length > 0 && (
+              <div style={{ background: 'var(--brand-tint)', border: '1px solid var(--brand-tint2)', borderRadius: 6, padding: '9px 12px', marginBottom: 14 }}>
+                <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--brand-primary-strong)', margin: '0 0 2px' }}>{coverageGaps.join(' · ')}</p>
+                <p style={{ fontSize: 12, color: 'var(--brand-ink)', margin: 0 }}>You can still save it. It will show on the child's Services tab to sort out.</p>
+              </div>
+            )}
             {outsideContract && (
               <div style={{ background: currentHoursOk ? 'var(--brand-wash)' : 'var(--brand-tint)', border: `1px solid ${currentHoursOk ? 'var(--brand-border)' : 'var(--brand-tint2)'}`, borderRadius: 6, padding: '9px 12px', marginBottom: 14 }}>
                 {currentHoursOk ? (
@@ -3554,6 +3604,20 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
                 <option value="">Reason (optional)</option>
                 {CANCEL_REASONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
+            )}
+            {askMissedBy && (
+              <div role="group" aria-label="Who cancelled?" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: '#374151' }}>Who cancelled?</span>
+                {[['family', 'Family'], ['provider', 'Provider']].map(([value, label]) => (
+                  <button key={value} type="button" aria-pressed={missedBy === value} onClick={() => setMissedBy(value)} style={choiceStyle(missedBy === value)}>{label}</button>
+                ))}
+              </div>
+            )}
+            {providerCancelled && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#374151', marginBottom: 12, cursor: 'pointer', flexBasis: '100%' }}>
+                <input type="checkbox" checked={familyNotified} onChange={e => setFamilyNotified(e.target.checked)} />
+                The family and service coordinator were told at least 5 business days ahead
+              </label>
             )}
             {askAbsence && (
               <select

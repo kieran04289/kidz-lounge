@@ -6,6 +6,7 @@ import { Card, PageHeader, Tag, UnderlineTabs } from './dashboardUi';
 import { INK, MUTED, HAIRLINE, PAGE_BG, FONT, NUMERIC, TONES, ACCENT, buttonStyle } from './uiTokens';
 import { featureOn } from './brand';
 import { fmtDate } from './sessionNotePdf';
+import CredentialsPage from './pages/CredentialsPage';
 
 // The office's EI compliance dashboard (the "ei" feature, PedsDesk only, Oct
 // 2026; API routes/compliance.js): everything an NYC EI agency is audited on
@@ -14,29 +15,48 @@ import { fmtDate } from './sessionNotePdf';
 
 // The API's sections sorted into four groups (Kieran, Oct 2026: eleven
 // tabs in a row made things hard to find). A summary of the groups comes
-// first; picking one shows its sections as tabs. Make-ups and credentials
-// have their own pages (Mandates, Credentials), so they're counted here and
-// linked to rather than listed twice.
+// first; picking one shows its sections as tabs. Make-ups live in EI Hub's
+// Mandates, so they're counted here and linked to. Credentials are part of
+// Compliance (Kieran, Oct 2026): the Staff group shows the Credentials page
+// itself (CredentialsPage `embedded`), so they're never listed twice.
 const GROUPS = [
   { key: 'paperwork', label: 'Paperwork', sections: [['notes', 'Session notes'], ['reports', 'Progress reports'], ['evals', 'Evaluation reports']] },
   { key: 'services', label: 'Services', sections: [['starts', 'Service starts'], ['absences', 'Provider absences']],
-    link: { section: 'makeups', to: featureOn('mandates') ? '/mandates' : '/billing', page: 'Mandates', what: (n) => `${n} make-up${n === 1 ? '' : 's'} owed or due` } },
+    link: { section: 'makeups', to: featureOn('mandates') ? '/ei-hub?view=mandates' : '/billing', page: 'Mandates', what: (n) => `${n} make-up${n === 1 ? '' : 's'} owed or due` } },
   { key: 'deadlines', label: 'Child deadlines', sections: [['ifsps', 'IFSPs ending'], ['authorizations', 'Authorizations'], ['transitions', 'Turning 3'], ['orders', 'Orders (PT/OT)']] },
-  { key: 'staff', label: 'Staff', sections: [],
-    link: { section: 'credentials', to: '/credentials', page: 'Credentials', what: (n) => `${n} staff credential${n === 1 ? '' : 's'} expired or expiring` } },
+  { key: 'staff', label: 'Staff', sections: [], countOf: 'credentials', embed: 'credentials' },
 ];
-const keysOf = (g) => [...g.sections.map(([k]) => k), ...(g.link ? [g.link.section] : [])];
+const keysOf = (g) => [...g.sections.map(([k]) => k), ...(g.link ? [g.link.section] : []), ...(g.countOf ? [g.countOf] : [])];
 
-function Rows({ items, isMobile, onNotified }) {
+// Column headings for each list (Kieran, Oct 2026: every list needs them).
+// The last column's date means something different per list.
+const COLUMNS = {
+  notes: ['Note', 'Session'], reports: ['Report', 'Due'], evals: ['Evaluation report', 'Due'],
+  starts: ['Service start', 'Due'], absences: ['Absence', 'Tell by'], ifsps: ['IFSP', 'Ends'],
+  authorizations: ['Authorization', 'Ends'], transitions: ['Turning 3', 'Due'], orders: ['Order', 'Expires'],
+};
+const DEFAULT_COLUMNS = ['What\'s needed', 'Date'];
+const ROW_COLUMNS = 'minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 1.8fr) 100px';
+const ABSENCE_COLUMNS = 'minmax(0, 1fr) minmax(0, 2.4fr) 100px 150px';
+const headStyle = { fontSize: 12, fontWeight: 500, color: MUTED };
+
+function Rows({ items, isMobile, onNotified, section }) {
   const navigate = useNavigate();
   if (!items.length) return <p style={{ margin: 0, fontSize: 13.5, color: MUTED }}>Nothing waiting.</p>;
-  return items.map((x, i) => {
+  const [what, when] = COLUMNS[section] || DEFAULT_COLUMNS;
+  const absences = section === 'absences';
+  const head = !isMobile && (
+    <div role="row" style={{ display: 'grid', gridTemplateColumns: absences ? ABSENCE_COLUMNS : ROW_COLUMNS, gap: 12, padding: '0 0 8px', borderBottom: `1px solid ${HAIRLINE}` }}>
+      {(absences ? ['Child', what, when, ''] : ['Child', 'Provider', what, when]).map((h, i) => <span key={i} role="columnheader" style={headStyle}>{h}</span>)}
+    </div>
+  );
+  return <>{head}{items.map((x, i) => {
     const to = x.href || (x.patient_name ? `/patients/${encodeURIComponent(x.patient_name)}` : null);
     // A provider's absence: once the family and SC are told, record it here.
     if (x.notice) {
       return (
         <div key={`${x.notice.provider}-${x.notice.absence_date}-${x.patient_id}`}
-          style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 2.4fr) 100px 150px', gap: isMobile ? 4 : 12, alignItems: 'center', padding: '9px 0', borderTop: i ? `1px solid ${HAIRLINE}` : 'none', fontSize: 13.5, color: INK, ...NUMERIC }}>
+          style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : ABSENCE_COLUMNS, gap: isMobile ? 4 : 12, alignItems: 'center', padding: '9px 0', borderTop: i ? `1px solid ${HAIRLINE}` : 'none', fontSize: 13.5, color: INK, ...NUMERIC }}>
           <span style={{ fontWeight: 600 }}>{x.patient_name}</span>
           <span>{x.text}</span>
           <span><Tag tone={x.severity === 'danger' ? 'danger' : 'warning'}>{fmtDate(x.date)}</Tag></span>
@@ -46,7 +66,7 @@ function Rows({ items, isMobile, onNotified }) {
     }
     return (
       <button key={`${x.href || ''}-${x.patient_name || ''}-${x.text}-${i}`} type="button" disabled={!to} onClick={() => to && navigate(to)}
-        style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 1.8fr) 100px', gap: isMobile ? 4 : 12, alignItems: 'center',
+        style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr) auto' : ROW_COLUMNS, gap: isMobile ? 4 : 12, alignItems: 'center',
           width: '100%', textAlign: 'left', padding: '9px 0', border: 'none', borderTop: i ? `1px solid ${HAIRLINE}` : 'none', background: 'none', cursor: to ? 'pointer' : 'default', fontFamily: 'inherit', fontSize: 13.5, color: INK, ...NUMERIC }}>
         {isMobile ? (
           <>
@@ -66,7 +86,7 @@ function Rows({ items, isMobile, onNotified }) {
         )}
       </button>
     );
-  });
+  })}</>;
 }
 
 function GroupCard({ group, sections, active, first, isMobile, onPick }) {
@@ -124,9 +144,10 @@ export default function CompliancePage() {
             {tab && (
               <Card pad={isMobile ? 14 : 20}>
                 {items === null && <p style={{ margin: 0, fontSize: 13.5, color: TONES.danger.fg }}>This part couldn't be worked out. Try again later.</p>}
-                {items && <Rows items={items} isMobile={isMobile} onNotified={() => setReload(n => n + 1)} />}
+                {items && <Rows items={items} section={tab} isMobile={isMobile} onNotified={() => setReload(n => n + 1)} />}
               </Card>
             )}
+            {group.embed === 'credentials' && <CredentialsPage embedded />}
             {group.link && (
               <p style={{ margin: tab ? '14px 2px 0' : 0, fontSize: 13.5, color: MUTED }}>
                 {linked === null ? `${group.link.page} couldn't be checked. ` : `${group.link.what((linked || []).length)}. `}

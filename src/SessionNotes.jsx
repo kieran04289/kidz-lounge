@@ -295,6 +295,57 @@ function ParentSignPanel({ data, onDone, onCancel }) {
 }
 
 // /session-notes/note?key=...: write, sign and print one session's note.
+// Billing codes for the session (Kieran, Oct 2026; API lib/sessionCodes.js):
+// set here by the provider, the defaults from their EI-Hub setup until
+// changed. EI-Hub claims bill these, and they lock when the provider signs.
+function NoteCodes({ noteKey, billing, onSaved }) {
+  const start = billing.codes.length ? billing.codes : Array(billing.default_lines || 1).fill('');
+  const [codes, setCodes] = useState(start);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [saved, setSaved] = useState(false);
+  const dirty = codes.join(',') !== start.join(',');
+  const save = async (list) => {
+    setBusy(true); setError(null); setSaved(false);
+    try {
+      const r = await api.saveSessionNoteCodes(noteKey, list);
+      onSaved(r.billing);
+      setCodes(r.billing.codes.length ? r.billing.codes : Array(r.billing.default_lines || 1).fill(''));
+      setSaved(true);
+    } catch (err) { setError(err.message); }
+    setBusy(false);
+  };
+  return (
+    <div style={{ marginTop: 14, padding: '12px 14px', border: `1px solid ${HAIRLINE}`, borderRadius: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: INK }}>Billing codes</span>
+        <span style={{ fontSize: 12, color: MUTED }}>
+          {billing.codes_changed ? 'Changed for this session' : 'Your defaults'} · {billing.default_lines} line{billing.default_lines === 1 ? '' : 's'} for this length · locks when you sign
+        </span>
+      </div>
+      {codes.map((c, i) => (
+        <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: MUTED, width: 44 }}>Line {i + 1}</span>
+          <select aria-label={`Line ${i + 1} code`} value={c} onChange={e => { setSaved(false); setCodes(list => list.map((x, j) => (j === i ? e.target.value : x))); }}
+            style={{ ...eiInput, width: 'auto', minWidth: 220, padding: '5px 8px' }}>
+            <option value="">Choose a code</option>
+            {billing.allowed.map(o => <option key={o.code} value={o.code}>{o.code} {o.label}</option>)}
+          </select>
+          {codes.length > 1 && <button type="button" aria-label={`Remove line ${i + 1}`} onClick={() => { setSaved(false); setCodes(list => list.filter((_, j) => j !== i)); }} style={buttonStyle('text')}>×</button>}
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
+        {codes.length < 8 && <button type="button" onClick={() => { setSaved(false); setCodes(list => [...list, list[list.length - 1] || '']); }} style={buttonStyle('text')}>+ Line</button>}
+        <button type="button" disabled={busy || !dirty || codes.some(x => !x)} onClick={() => save(codes)} style={buttonStyle('primary', { padding: '5px 12px' })}>{busy ? 'Saving...' : 'Save codes'}</button>
+        {billing.codes_changed && <button type="button" disabled={busy} onClick={() => save(null)} style={buttonStyle('secondary', { padding: '5px 12px' })}>Use my defaults</button>}
+        {saved && <span role="status" style={{ fontSize: 12.5, color: TONES.success.fg }}>Saved</span>}
+        {!billing.codes.length && !billing.codes_changed && <span style={{ fontSize: 12.5, color: TONES.warning.fg }}>No default codes are set up for you. Choose them here, or ask the office to set your defaults.</span>}
+      </div>
+      {error && <p role="alert" style={{ fontSize: 12.5, color: TONES.danger.fg, margin: '6px 0 0' }}>{error}</p>}
+    </div>
+  );
+}
+
 export function SessionNotePage() {
   const { user } = useAuth();
   const [params] = useSearchParams();
@@ -432,6 +483,10 @@ export function SessionNotePage() {
               {row('IFSP', session.ifsp ? session.ifsp.type : 'None in effect on this date')}
             </div>
           </div>
+          {editable && !cancelled && session.billing && (
+            <NoteCodes noteKey={key} billing={session.billing}
+              onSaved={(billing) => setData(d => ({ ...d, session: { ...d.session, billing, header: { ...d.session.header, ...(d.session.service === 'SI' ? { hcpcs_codes: billing.codes } : { cpt_codes: billing.codes }) } } }))} />
+          )}
           {!h.ei_number || !h.npi ? <p style={{ fontSize: 12.5, color: TONES.warning.fg, margin: '8px 0 0' }}>Missing details above come from the child's EI details and the provider's EI-Hub setup. Ask the office to fill them in.</p> : null}
 
           {!cancelled && (
