@@ -31,6 +31,21 @@ function Check({ done }) {
   );
 }
 
+// One copy of a child's workflow for the chart (Oct 2026): the Overview and
+// the Services tab both show it, and it's one of the heavier requests, so a
+// second tab within 30 seconds reuses it. Any change on the chart (a
+// mandate, End EI services) asks for a fresh one.
+const WORKFLOW_TTL_MS = 30 * 1000;
+const workflowCache = new Map(); // patient id -> { at, promise }
+function loadWorkflow(patientId, { fresh = false } = {}) {
+  const hit = workflowCache.get(patientId);
+  if (!fresh && hit && Date.now() - hit.at < WORKFLOW_TTL_MS) return hit.promise;
+  const promise = api.getEiWorkflow(patientId);
+  workflowCache.set(patientId, { at: Date.now(), promise });
+  promise.catch(() => workflowCache.delete(patientId));
+  return promise;
+}
+
 const sessionLine = (s) => `${nice(s.date)} · ${formatSlotLabel(s.time)} · ${s.service} with ${s.provider}`;
 
 // One booked session after EI ended: delete it, or end its weekly series.
@@ -91,7 +106,8 @@ function EndForm({ patient, reasons, onDone, onCancel }) {
   );
 }
 
-export default function EiWorkflowCard({ patient, headerStyle, boxStyle, reloadKey = 0 }) {
+// `parts`: which sections to show here ('intake', 'checks', 'discharge').
+export default function EiWorkflowCard({ patient, headerStyle, boxStyle, reloadKey = 0, parts = ['intake', 'checks', 'discharge'] }) {
   const { user } = useAuth();
   const office = canManage(user);
   const [data, setData] = useState(null);
@@ -101,7 +117,8 @@ export default function EiWorkflowCard({ patient, headerStyle, boxStyle, reloadK
   const [result, setResult] = useState(null);
   useEffect(() => {
     let alive = true;
-    api.getEiWorkflow(patient.id)
+    // A reload (a change made here or on the Services tab) is always fresh.
+    loadWorkflow(patient.id, { fresh: reload + reloadKey > 0 })
       .then(d => { if (alive) { setData(d); setError(null); } })
       .catch(err => { if (alive) setError(err.message); });
     return () => { alive = false; };
@@ -113,7 +130,7 @@ export default function EiWorkflowCard({ patient, headerStyle, boxStyle, reloadK
   const d = data.discharge;
   return (
     <>
-      {intake && !intake.complete && (
+      {parts.includes('intake') && intake && !intake.complete && (
         <>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
             <p style={headerStyle}>EI intake</p>
@@ -133,11 +150,11 @@ export default function EiWorkflowCard({ patient, headerStyle, boxStyle, reloadK
         </>
       )}
 
-      {data.outside.length > 0 && (
+      {parts.includes('checks') && data.outside.length > 0 && (
         <>
           <p style={headerStyle}>Booked sessions to check</p>
           <div style={boxStyle}>
-            <p style={{ margin: '0 0 6px', fontSize: 12.5, color: MUTED }}>Booked in the next {data.lookahead_days} days without a mandate{office ? ' or authorization' : ''} covering them. Fix the mandate or authorization below, or change the session.</p>
+            <p style={{ margin: '0 0 6px', fontSize: 12.5, color: MUTED }}>Booked in the next {data.lookahead_days} days without a mandate{office ? ' or authorization' : ''} covering them. Fix the mandate or authorization above, or change the session.</p>
             {data.outside.map(s => (
               <div key={s.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '7px 0', borderTop: `1px solid ${LINE}`, fontSize: 13, color: INK, flexWrap: 'wrap' }}>
                 <span>{sessionLine(s)}</span>
@@ -148,7 +165,7 @@ export default function EiWorkflowCard({ patient, headerStyle, boxStyle, reloadK
         </>
       )}
 
-      {(d || office) && (
+      {parts.includes('discharge') && (d || office) && (
         <>
           <p style={headerStyle}>Discharge</p>
           <div style={boxStyle}>
@@ -192,7 +209,7 @@ export function EiOverview({ patient, headerStyle, boxStyle, formsToReview = 0, 
   const [data, setData] = useState(null);
   useEffect(() => {
     let alive = true;
-    api.getEiWorkflow(patient.id).then(d => { if (alive) setData(d); }).catch(() => {});
+    loadWorkflow(patient.id).then(d => { if (alive) setData(d); }).catch(() => {});
     return () => { alive = false; };
   }, [patient.id]);
   if (!data) return null;

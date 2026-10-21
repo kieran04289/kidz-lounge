@@ -366,9 +366,13 @@ export const api = {
   getEiServices: (patientId) => request(`/patients/${patientId}/ei-services`),
   // The EI child's workflow (intake, sessions to check, discharge): routes/eiWorkflow.js.
   getEiWorkflow: (patientId) => request(`/patients/${patientId}/ei-workflow`),
+  // My work (PedsDesk's home page; routes/myWork.js).
+  getMyWork: () => request('/my-work'),
   getEiCoverage: (patient, provider, date) => request(`/ei-coverage?patient=${encodeURIComponent(patient)}&provider=${encodeURIComponent(provider)}&date=${date}`),
   endEiServices: (patientId, body) => request(`/patients/${patientId}/ei-end`, { method: 'POST', body: JSON.stringify(body) }),
   addEiMandate: (patientId, body) => request(`/patients/${patientId}/ei-services/mandates`, { method: 'POST', body: JSON.stringify(body) }),
+  // Several services' new mandates at once, from one date ("Update mandates").
+  saveEiMandates: (patientId, body) => request(`/patients/${patientId}/ei-services/mandates/batch`, { method: 'POST', body: JSON.stringify(body) }),
   correctEiMandate: (patientId, rowId, body) => request(`/patients/${patientId}/ei-services/mandates/${rowId}`, { method: 'PUT', body: JSON.stringify(body) }),
   addEiAuthorization: (patientId, body) => request(`/patients/${patientId}/ei-services/authorizations`, { method: 'POST', body: JSON.stringify(body) }),
   correctEiAuthorization: (patientId, number, body) => request(`/patients/${patientId}/ei-services/authorizations/${encodeURIComponent(number)}`, { method: 'PUT', body: JSON.stringify(body) }),

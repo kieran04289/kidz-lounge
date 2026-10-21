@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { seriesIdOf } from '../appointmentSetting';
 import { CENTER, SETTINGS, isOffsite, offsiteLocation, offsiteSetting, settingOfArea, roomOfArea, needsRoom, isOffGrid, saveSettingChange, areaAfterStatus, VIRTUAL, holdsRoom } from '../appointmentSetting';
 import { api } from '../api';
@@ -24,6 +24,7 @@ import { AppointmentDragLayer, DropToast } from '../AppointmentDragLayer';
 import { saveDrop, movedFields, isMissedAppt } from '../scheduleDrag';
 import { featureOn } from '../brand';
 import { ROOM_OPTIONS, rxApplies } from '../patientOptions';
+import { pollWhileVisible } from '../pageVisibility';
 
 export const TIME_SLOTS = [];
 for (let h = 8; h <= 17; h++) {
@@ -277,8 +278,9 @@ export function getConflictKey(c) {
 // scheduling directly on top of one gets flagged rather than passing
 // silently.
 // closedDates: [{ date, reason }] from /office-hours/closed-dates. Any
-// non-canceled appointment on a closed day is flagged ('closed'), and the
-// not-contracted check is skipped for it -- on a closed day that shading
+// non-canceled in-office appointment on a closed day is flagged ('closed'),
+// and the not-contracted check is skipped for it (School / Home sessions on
+// a closed day are fine and get the contracted-hours check instead) -- on a closed day that shading
 // isn't drawn, and flagging both would double-count one appointment.
 export function computeConflicts(appointments, oooRecords, contractedGaps = [], closedDates = []) {
   const list = [];
@@ -322,9 +324,11 @@ export function computeConflicts(appointments, oooRecords, contractedGaps = [], 
       if (!overlaps) return;
       list.push({ kind: 'ooo', a: apt, ooo, types: ['ooo'] });
     });
-    // Outside hours was removed (Kieran, Oct 15 2026): a session off the
-    // grid follows the same rules as any other.
-    const closed = closedByDate[apt.appointment_date];
+    // An office closure only concerns sessions in the office (Kieran, Oct
+    // 20 2026): a room, Center or Virtual. School and Home sessions can run
+    // on a closed day; they still get the contracted-hours check below,
+    // which the provider can okay as usual. (API: lib/cancelReason.js inOffice.)
+    const closed = !isOffsite(apt.treatment_area) ? closedByDate[apt.appointment_date] : null;
     if (closed) {
       list.push({ kind: 'closed', a: apt, closed, types: ['closed'] });
       return;
@@ -616,6 +620,25 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
           {apt.appointment_status}{apt.appointment_status === 'Canceled' && CANCEL_REASON_SHORT[apt.cancel_reason] ? ` · ${CANCEL_REASON_SHORT[apt.cancel_reason]}` : apt.appointment_status === 'Canceled' && apt.missed_by === 'provider' ? ' · Provider' : ''}
         </span>
       </div>
+      {/* PedsDesk: the session's EI note, one click from the card (Kieran,
+          Oct 2026). Neutral like "Set room"; nothing once the note is done.
+          From the API (lib/eiNoteMarks.js). */}
+      {!compact && apt.ei_note && apt.ei_note.status !== 'complete' && (
+        <div style={{ flexShrink: 0, lineHeight: 1.2, position: 'relative', zIndex: 1 }}>
+          <Link
+            to={`/session-notes/note?key=${encodeURIComponent(apt.ei_note.key)}`}
+            onClick={(e) => { e.stopPropagation(); }}
+            title="Open this session's note"
+            style={{
+              display: 'inline-flex', alignItems: 'center', maxWidth: '100%', whiteSpace: 'nowrap', textDecoration: 'none',
+              fontSize: 10, fontWeight: 500, lineHeight: 1.3, borderRadius: 'var(--brand-pill-radius)', padding: '0 6px',
+              border: '1px dashed #d1d5db', background: 'rgba(255,255,255,0.6)', color: '#6b7280',
+            }}
+          >
+            {{ none: 'Write note', draft: 'Finish note', needs_parent: 'Note: parent to sign', needs_provider: 'Note: sign', needs_supervisor: 'Note: co-sign' }[apt.ei_note.status] || 'Note'}
+          </Link>
+        </div>
+      )}
       {alertCount > 0 && (
         <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 2, zIndex: 0 }}>
           {patientAlert.allergies && <AlertSymbol kind="allergies" size={13} title={`Allergies: ${patientAlert.allergies}`} />}
@@ -1656,7 +1679,11 @@ function ScheduleApp() {
   // `clear`: a new day while a card is being dragged (hovering over the
   // arrows) -- the grid stays up so the drag can carry on, but the old
   // day's cards mustn't show under the new date while it loads.
+  // Only the newest load may fill the grid: clicking through days quickly
+  // used to let a slower, older response land last and show the wrong day.
+  const loadSeqRef = useRef(0);
   const loadDay = useCallback(async (date, { background = false, clear = false } = {}) => {
+    const seq = ++loadSeqRef.current;
     if (!background) setLoading(true);
     if (clear) { setAppointments([]); setOooRecords([]); setClosedInfo(null); }
     setError(null);
@@ -1668,20 +1695,32 @@ function ScheduleApp() {
         api.getOOO(dateStr),
         api.getClosedDates(dateStr, dateStr).catch(() => []),
       ]);
+      if (seq !== loadSeqRef.current) return;
       setAppointments(apts);
       setOooRecords(ooo);
       setClosedInfo(closedDates.length > 0 ? closedDates[0] : null);
     } catch (err) {
+      if (seq !== loadSeqRef.current) return;
       setError(err.message);
     }
     setLoading(false);
     setDayLoadedOnce(true);
   }, []);
 
+  // After a change (quick edits, drag and drop, okays): the day reloads now
+  // and the two-week conflicts banner shortly after, instead of up to five
+  // minutes later. The 30-second poll reloads only the day.
+  const lookaheadTimerRef = useRef(null);
+  const loadLookaheadRef = useRef(null);
+  const refreshLookaheadSoon = useCallback(() => {
+    clearTimeout(lookaheadTimerRef.current);
+    lookaheadTimerRef.current = setTimeout(() => loadLookaheadRef.current?.(), 1500);
+  }, []);
+  useEffect(() => () => clearTimeout(lookaheadTimerRef.current), []);
   const loadDayRef = useRef(null);
   useEffect(() => {
-    loadDayRef.current = () => loadDay(selectedDateRef.current, { background: true });
-  }, [loadDay]);
+    loadDayRef.current = () => { loadDay(selectedDateRef.current, { background: true }); refreshLookaheadSoon(); };
+  }, [loadDay, refreshLookaheadSoon]);
 
   // ---- Drag and drop (scheduleDrag.js) ----
   const [dropToast, setDropToast] = useState(null);
@@ -1769,12 +1808,11 @@ function ScheduleApp() {
 
   // No push-based real-time on this backend (unlike Supabase) -- poll instead.
   useEffect(() => {
-    const interval = setInterval(() => {
+    return pollWhileVisible(() => {
       // Not mid-drag: the cards would shift under the one being dragged.
       if (isDragging()) return;
       loadDay(selectedDateRef.current, { background: true });
     }, 30000);
-    return () => clearInterval(interval);
   }, [loadDay, isDragging]);
 
   // The old client-side auto-extend mechanism for Appointments has been
@@ -1816,9 +1854,9 @@ function ScheduleApp() {
   useEffect(() => {
     if (!dayLoadedOnce) return;
     loadLookaheadConflicts();
-    const interval = setInterval(loadLookaheadConflicts, 5 * 60 * 1000);
-    return () => clearInterval(interval);
+    return pollWhileVisible(loadLookaheadConflicts, 5 * 60 * 1000);
   }, [dayLoadedOnce, loadLookaheadConflicts]);
+  useEffect(() => { loadLookaheadRef.current = loadLookaheadConflicts; }, [loadLookaheadConflicts]);
 
   const goToPreviousDay = () => {
     const d = new Date(selectedDate);
@@ -2543,7 +2581,7 @@ function ScheduleApp() {
           defaultDate={selectedDate}
           prefill={prefill}
           onClose={() => { setShowModal(false); setEditingAppointment(null); setPrefill(null); }}
-          onSaved={() => { setShowModal(false); setEditingAppointment(null); setPrefill(null); loadDay(selectedDateRef.current, { background: true }); }}
+          onSaved={() => { setShowModal(false); setEditingAppointment(null); setPrefill(null); loadDay(selectedDateRef.current, { background: true }); refreshLookaheadSoon(); }}
           onCommentsSynced={() => loadDay(selectedDateRef.current, { background: true })}
         />
       )}
@@ -2557,7 +2595,7 @@ function ScheduleApp() {
           existing={editingOOO}
           defaultDate={selectedDate}
           onClose={() => { setShowOOOModal(false); setEditingOOO(null); }}
-          onSaved={() => { setShowOOOModal(false); setEditingOOO(null); loadDay(selectedDateRef.current, { background: true }); }}
+          onSaved={() => { setShowOOOModal(false); setEditingOOO(null); loadDay(selectedDateRef.current, { background: true }); refreshLookaheadSoon(); }}
           onCommentsSynced={() => loadDay(selectedDateRef.current, { background: true })}
         />
       )}

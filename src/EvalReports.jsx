@@ -11,6 +11,7 @@ import { SignaturePad } from './PowerFormFields';
 import { openBlob, fmtDate, fmtTime } from './sessionNotePdf';
 import { EVAL_TYPE_LABEL, ELIGIBILITY_LABEL, TELEHEALTH_REASON_LABEL, DOMAIN_ORDER } from './evalReportPdf';
 import { buildEiPdf, evalReportSection } from './eiFormsPdf';
+import PaperworkTabs from './PaperworkTabs';
 
 // EI evaluation reports (the "ei" feature, PedsDesk only, Oct 2026; API
 // routes/evalReports.js, rules in lib/evalReports.js). One report per
@@ -52,13 +53,14 @@ export function EvalReportsPage() {
   return (
     <div style={{ background: PAGE_BG, fontFamily: FONT, minHeight: '100%' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '18px 14px 40px' : '28px 28px 56px' }}>
-        <PageHeader title="Evaluation reports" isMobile={isMobile} actions={(
+        <PageHeader title="Paperwork" isMobile={isMobile} actions={(
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button type="button" aria-label="Previous month" onClick={() => setMonth(m => shiftMonth(m, -1))} style={buttonStyle('secondary', { padding: '6px 10px' })}>‹</button>
             <span style={{ fontSize: 13.5, fontWeight: 600, color: INK, minWidth: 130, textAlign: 'center' }}>{monthLabel(month)}</span>
             <button type="button" aria-label="Next month" onClick={() => setMonth(m => shiftMonth(m, 1))} style={buttonStyle('secondary', { padding: '6px 10px' })}>›</button>
           </div>
         )} />
+        <PaperworkTabs />
         <Card pad={isMobile ? 14 : 20}>
           {error && <p role="alert" style={{ margin: 0, fontSize: 13.5, color: TONES.danger.fg }}>{error}</p>}
           {!data && !error && <p style={{ margin: 0, fontSize: 13.5, color: MUTED }}>Loading...</p>}
@@ -179,7 +181,6 @@ export function EvalReportPage() {
   return (
     <div style={{ background: PAGE_BG, fontFamily: FONT, minHeight: '100%' }}>
       <div style={{ maxWidth: 900, margin: '0 auto', padding: isMobile ? '18px 14px 60px' : '28px 28px 72px' }}>
-        <Link to="/eval-reports" style={{ fontSize: 13, color: 'var(--brand-primary)' }}>← Evaluation reports</Link>
         <PageHeader title={`${header.child_name} · Evaluation report`} isMobile={isMobile} actions={(
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <Tag tone={st.tone}>{st.text}</Tag>

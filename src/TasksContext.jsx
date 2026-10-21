@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { api } from './api';
 import { useAuth } from './AuthContext';
+import { pollWhileVisible } from './pageVisibility';
 
 const TasksContext = createContext(null);
 
@@ -36,8 +37,8 @@ export function TasksProvider({ children }) {
     }
     // Background: let the page's own requests go first.
     const first = setTimeout(refresh, 1500);
-    const interval = setInterval(refresh, 60000);
-    return () => { clearTimeout(first); clearInterval(interval); };
+    const stop = pollWhileVisible(refresh, 60000);
+    return () => { clearTimeout(first); stop(); };
   }, [user, refresh]);
 
   const openCount = tasks.filter(t => t.status === 'open').length;

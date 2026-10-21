@@ -3,6 +3,7 @@ import { api } from './api';
 import { useAuth } from './AuthContext';
 import { useChat } from './ChatContext';
 import Linkify from './Linkify';
+import { pollWhileVisible } from './pageVisibility';
 
 const BRAND_COLOR = 'var(--brand-primary)';
 const BORDER = '#E2E4E9';
@@ -140,8 +141,7 @@ function ThreadView({ conversation, directory, directoryMap, currentUser, onBack
   useEffect(() => {
     loadMessages();
     api.markConversationRead(conversation.id).catch(() => {});
-    const interval = setInterval(loadMessages, 5000);
-    return () => clearInterval(interval);
+    return pollWhileVisible(loadMessages, 5000);
   }, [conversation.id, loadMessages]);
 
   useEffect(() => {
@@ -290,7 +290,7 @@ export default function ChatWidget() {
   };
 
   return (
-    <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 9985, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+    <div data-kl-chat-launcher="" style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 9985, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       {widgetOpen && (
         // Never taller or wider than the window: 480 x 340 when there's room,
         // otherwise whatever is left above the chat button (20px margin +

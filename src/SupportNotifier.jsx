@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { api } from './api';
 import { useAuth } from './AuthContext';
 import Linkify from './Linkify';
+import { pollWhileVisible } from './pageVisibility';
 
 // Popup telling someone their support ticket was resolved (only tickets
 // they sent while signed in). Checks on sign-in, every minute, and on
@@ -30,8 +31,7 @@ export default function SupportNotifier() {
 
   useEffect(() => {
     if (!user) return undefined;
-    const timer = setInterval(check, 60 * 1000);
-    return () => clearInterval(timer);
+    return pollWhileVisible(check, 60 * 1000);
   }, [user, check]);
   // On sign-in and on every page change.
   useEffect(() => {

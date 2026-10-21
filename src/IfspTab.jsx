@@ -34,11 +34,13 @@ const ELIGIBLE = [['', 'Not known yet'], ['pending', 'Being evaluated'], ['yes',
 const fmt = (s) => (s ? new Date(`${String(s).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null);
 const daysBetween = (from, to) => Math.round((new Date(`${to}T00:00:00`) - new Date(`${from}T00:00:00`)) / 86400000);
 
+// Label then value beside it (Oct 2026: values pushed to the far right of a
+// wide section were hard to read across); stacks on a narrow screen.
 function Row({ label, children }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, padding: '5px 0', borderBottom: `1px solid ${LINE}` }}>
-      <span style={{ color: MUTED, flexShrink: 0 }}>{label}</span>
-      <span style={{ color: INK, fontWeight: 500, textAlign: 'right', minWidth: 0, overflowWrap: 'anywhere' }}>{children}</span>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), max-content))', columnGap: 20, rowGap: 2, fontSize: 13.5, padding: '6px 0', borderBottom: `1px solid ${LINE}` }}>
+      <span style={{ color: MUTED, width: 180 }}>{label}</span>
+      <span style={{ color: INK, minWidth: 0, overflowWrap: 'anywhere' }}>{children}</span>
     </div>
   );
 }
@@ -411,79 +413,99 @@ export default function IfspTab({ patient, headerStyle, boxStyle, onPatientChang
   const t = transition.dates;
   const rec = transition.record || {};
 
+  // Laid out as a summary of the current IFSP, then its outcomes beside
+  // turning 3 and consents (Kieran, Oct 2026: "the IFSP tab needs to be
+  // cleaner"). Forms open in place of what they edit.
+  const facts = current ? [
+    current.meeting_date && ['Meeting', fmt(current.meeting_date)],
+    ['Progress report due', <Due key="due" date={current.report_due} today={today} />],
+    ['Service coordinator', sc.sc_name ? [sc.sc_name, sc.sc_company].filter(Boolean).join(', ') : '—'],
+    sc.sc_name && (sc.sc_phone || sc.sc_email) && ['Contact', [sc.sc_phone, sc.sc_email].filter(Boolean).join(' · ')],
+  ].filter(Boolean) : [];
+  const actions = (
+    <span style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+      {current?.document_id && <button type="button" onClick={() => openDocument(current.document_id)} style={linkButton}>Open IFSP</button>}
+      {canEdit && current && editing !== current.id && <button type="button" onClick={() => setEditing(current.id)} style={linkButton}>Edit</button>}
+      {canEdit && editing !== 'new' && <button type="button" onClick={() => setEditing('new')} style={linkButton}>+ New IFSP</button>}
+      {canEdit && <RecordPackButton patient={patient} />}
+    </span>
+  );
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-        <p style={headerStyle}>Current IFSP</p>
-        <span style={{ display: 'flex', gap: 14 }}>
-          {canEdit && <RecordPackButton patient={patient} />}
-          {canEdit && editing !== 'new' && (
-            <button type="button" onClick={() => setEditing('new')} style={linkButton}>+ New IFSP</button>
-          )}
-        </span>
-      </div>
       <div style={boxStyle}>
         {editing === 'new' && (
           <IfspForm patient={patient} seed={current ? { sc_name: current.sc_name, sc_company: current.sc_company, sc_phone: current.sc_phone, sc_email: current.sc_email } : { sc_name: sc.sc_name, sc_phone: sc.sc_phone, sc_email: sc.sc_email }}
             onSaved={saved} onCancel={() => setEditing(null)} />
         )}
         {editing !== 'new' && !current && (
-          <p style={{ fontSize: 13, color: MUTED, margin: 0 }}>No IFSP entered yet.{canEdit ? ' Add one from the IFSP document with + New IFSP.' : ''}</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'baseline' }}>
+            <p style={{ fontSize: 13.5, color: MUTED, margin: 0 }}>No IFSP entered yet.{canEdit ? ' Add one from the IFSP document.' : ''}</p>
+            {actions}
+          </div>
         )}
         {editing !== 'new' && current && (editing === current.id
           ? <IfspForm patient={patient} existing={current} onSaved={saved} onCancel={() => setEditing(null)} />
           : (
             <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginBottom: 4, flexWrap: 'wrap' }}>
-                <strong style={{ fontSize: 14, color: INK }}>{current.ifsp_type}</strong>
-                <span style={{ display: 'flex', gap: 14 }}>
-                  {current.document_id && <button type="button" onClick={() => openDocument(current.document_id)} style={linkButton}>Open IFSP</button>}
-                  {canEdit && <button type="button" onClick={() => setEditing(current.id)} style={linkButton}>Edit</button>}
-                </span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 16, fontWeight: 600, color: INK }}>
+                  {current.ifsp_type} IFSP <span style={{ fontWeight: 400, color: MUTED }}>· {fmt(current.start_date)} – {fmt(current.end_date) || 'no end date'}</span>
+                </div>
+                {actions}
               </div>
-              <Row label="Dates">{fmt(current.start_date)} – {fmt(current.end_date) || 'no end date'}</Row>
-              {current.meeting_date && <Row label="Meeting">{fmt(current.meeting_date)}</Row>}
-              <Row label="Progress report due"><Due date={current.report_due} today={today} /></Row>
-              <Row label="Service coordinator">
-                {sc.sc_name ? [sc.sc_name, sc.sc_company, sc.sc_phone, sc.sc_email].filter(Boolean).join(' · ') : '—'}
-              </Row>
-              {current.notes && <p style={{ fontSize: 13, color: INK, margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>{current.notes}</p>}
-              <p style={{ fontSize: 12.5, fontWeight: 600, color: INK, margin: '14px 0 0' }}>Outcomes</p>
-              <Outcomes outcomes={current.outcomes} />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '12px 24px', marginTop: 12 }}>
+                {facts.map(([label, value]) => (
+                  <div key={label} style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, color: MUTED, marginBottom: 2 }}>{label}</div>
+                    <div style={{ fontSize: 13.5, color: INK, overflowWrap: 'anywhere' }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+              {current.notes && <p style={{ fontSize: 13, color: INK, margin: '12px 0 0', whiteSpace: 'pre-wrap' }}>{current.notes}</p>}
             </>
           ))}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-        <p style={headerStyle}>Turning 3</p>
-        {canEdit && t && editing !== 'transition' && <button type="button" onClick={() => setEditing('transition')} style={linkButton}>Update</button>}
-      </div>
-      <div style={boxStyle}>
-        {!t && <p style={{ fontSize: 13, color: MUTED, margin: 0 }}>Add the child's date of birth to see the turning 3 dates.</p>}
-        {t && (
-          <>
-            <Row label="Turns 3">{fmt(t.third_birthday)}</Row>
-            <Row label="Tell the CPSE by">
-              {rec.parent_opted_out ? <span style={{ color: MUTED }}>Parent opted out</span> : <Due date={t.cpse_notice_by} today={today} doneOn={rec.cpse_notified_date} doneText="Told" />}
-            </Row>
-            <Row label="Transition conference">
-              {rec.conference_date
-                ? <Due doneOn={rec.conference_date} doneText="Held" />
-                : <span>{fmt(t.conference_from)} to <Due date={t.conference_by} today={today} /></span>}
-            </Row>
-            <Row label="CPSE eligibility">{(ELIGIBLE.find(([v]) => v === (rec.cpse_eligible || '')) || ELIGIBLE[0])[1]}</Row>
-            <Row label="EI ends">
-              {fmt(rec.ei_end_date || t.ei_ends)}
-              {!rec.ei_end_date && rec.cpse_eligible === 'yes' && <span style={{ color: MUTED, fontWeight: 400 }}> (may continue to {fmt(t.may_continue_until)} if the parent chooses)</span>}
-            </Row>
-            {rec.notes && <p style={{ fontSize: 13, color: INK, margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>{rec.notes}</p>}
-            {editing === 'transition' && <TransitionForm patient={patient} record={transition.record} onSaved={saved} onCancel={() => setEditing(null)} />}
-          </>
-        )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: '0 20px', alignItems: 'start' }}>
+        <div style={{ minWidth: 0 }}>
+          <p style={headerStyle}>Outcomes</p>
+          <div style={boxStyle}>
+            {current ? <Outcomes outcomes={current.outcomes} /> : <p style={{ fontSize: 13, color: MUTED, margin: 0 }}>They come from the current IFSP.</p>}
+          </div>
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+            <p style={headerStyle}>Turning 3</p>
+            {canEdit && t && editing !== 'transition' && <button type="button" onClick={() => setEditing('transition')} style={linkButton}>Update</button>}
+          </div>
+          <div style={boxStyle}>
+            {!t && <p style={{ fontSize: 13, color: MUTED, margin: 0 }}>Add the child's date of birth to see the turning 3 dates.</p>}
+            {t && (
+              <>
+                <Row label="Turns 3">{fmt(t.third_birthday)}</Row>
+                <Row label="Tell the CPSE by">
+                  {rec.parent_opted_out ? <span style={{ color: MUTED }}>Parent opted out</span> : <Due date={t.cpse_notice_by} today={today} doneOn={rec.cpse_notified_date} doneText="Told" />}
+                </Row>
+                <Row label="Transition conference">
+                  {rec.conference_date
+                    ? <Due doneOn={rec.conference_date} doneText="Held" />
+                    : <span>{fmt(t.conference_from)} to <Due date={t.conference_by} today={today} /></span>}
+                </Row>
+                <Row label="CPSE eligibility">{(ELIGIBLE.find(([v]) => v === (rec.cpse_eligible || '')) || ELIGIBLE[0])[1]}</Row>
+                <Row label="EI ends">
+                  {fmt(rec.ei_end_date || t.ei_ends)}
+                  {!rec.ei_end_date && rec.cpse_eligible === 'yes' && <span style={{ color: MUTED, fontWeight: 400 }}> (may continue to {fmt(t.may_continue_until)} if the parent chooses)</span>}
+                </Row>
+                {rec.notes && <p style={{ fontSize: 13, color: INK, margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>{rec.notes}</p>}
+                {editing === 'transition' && <TransitionForm patient={patient} record={transition.record} onSaved={saved} onCancel={() => setEditing(null)} />}
+              </>
+            )}
+          </div>
+          <ConsentsBox patient={patient} headerStyle={headerStyle} boxStyle={boxStyle} />
+        </div>
       </div>
 
       <ProgressReportsBox patient={patient} headerStyle={headerStyle} boxStyle={boxStyle} reload={reload} />
-      <ConsentsBox patient={patient} headerStyle={headerStyle} boxStyle={boxStyle} />
 
       {ifsps.length > 1 && (
         <>

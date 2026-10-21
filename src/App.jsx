@@ -19,6 +19,7 @@ import WeeklySchedulePage from './pages/WeeklySchedulePage';
 // screen). The schedules, Patients, the chart and sign-in stay in the main
 // bundle. Each lazy page shows "Loading..." for a moment the first time.
 const TasksPage = lazy(() => import('./pages/TasksPage'));
+const MyWorkPage = lazy(() => import('./pages/MyWorkPage'));
 const MyProfilePage = lazy(() => import('./pages/MyProfilePage'));
 const MyTimePage = lazy(() => import('./pages/MyTimePage'));
 const WaitlistPage = lazy(() => import('./pages/WaitlistPage'));
@@ -60,7 +61,10 @@ function AppShell() {
           <main className="kl-main">
           <Suspense fallback={<p style={{ padding: 28, fontSize: 13.5, color: '#71717A' }}>Loading...</p>}>
           <Routes>
-            <Route path="/" element={<RequireAuth><SchedulePage /></RequireAuth>} />
+            {/* PedsDesk ("ei") opens on My work; the daily schedule lives at /schedule
+                (Kidz Lounge keeps it at /, and /schedule works there too). */}
+            <Route path="/" element={<RequireAuth>{featureOn('ei') ? <MyWorkPage /> : <SchedulePage />}</RequireAuth>} />
+            <Route path="/schedule" element={<RequireAuth><SchedulePage /></RequireAuth>} />
             <Route path="/weekly" element={<RequireAuth><WeeklySchedulePage /></RequireAuth>} />
             <Route path="/billing" element={<RequireAuth><BillingPage key="payroll" section="payroll" /></RequireAuth>} />
             {/* The "mandates" feature splits Billing into three pages (BillingPage.jsx SECTIONS). */}
