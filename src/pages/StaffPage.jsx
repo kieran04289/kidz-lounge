@@ -6,7 +6,7 @@ import { MeetingAgendaEditor } from '../MeetingAgenda';
 import { useStaffDirectory, useStaffNames } from '../staffDirectory';
 import { useAuth } from '../AuthContext';
 import { Avatar } from '../Avatar';
-import { timeTypeStyle } from '../timeTypes';
+import { timeTypeStyle, SELF_SERVE_TYPES } from '../timeTypes';
 import { Tag, UnderlineTabs } from '../dashboardUi';
 import { INK as UI_INK, MUTED as UI_MUTED, HAIRLINE as UI_HAIRLINE, NUMERIC, buttonStyle } from '../uiTokens';
 import { canAdminister } from '../roles';
@@ -43,7 +43,6 @@ const BORDER = '#e2e4e9';
 const BALANCE_TYPES = ['PTO', 'UPTO'];
 // Staff set these for themselves with no approval (Kieran, Oct 2026): the
 // API approves them on the spot (SELF_SERVE_TYPES in routes/timeOff.js).
-const SELF_SERVE_TYPES = ['Lunch', 'Meeting', 'Unavailable'];
 const BALANCE_NEUTRAL_TYPES = ['Lunch', 'Meeting', 'Unavailable', 'Other'];
 const WEEKDAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 function formatDate(d) {

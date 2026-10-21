@@ -15,6 +15,7 @@
 - Each column is a provider, and each card is an appointment. A card shows the patient, the time and length, the room, and the status.
 - The **ST / OT / PT / SI** buttons show only providers of that specialty. Pick more than one to combine them, or **All** for everyone. The app remembers your choice.
 - Coloured blocks are time a provider isn't seeing patients: lunch, meetings, PTO and other time off. Click one to see its details.
+- Your own **lunch**, **meeting** and **unavailable** blocks have **Change time** and **Delete** (where your clinic has this turned on). No approval is needed. For a weekly block, choose **This & all future** or **Just this one**. A block you added in **My time** is changed there instead.
 - A blue line marks the current time.
 - A small alert icon on a card means the patient has an allergy or immunization note on their chart.
 - A grey dashed **Set room** on a card means it has no room yet. Click it to pick one.
