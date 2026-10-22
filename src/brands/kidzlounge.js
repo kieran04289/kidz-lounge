@@ -21,7 +21,13 @@ export default {
   // (kidz-lounge-api lib/features.js). ei: the EMR for NYC Early
   // Intervention agencies. mandates: Billing's month overview, mandates and
   // needs attention, and the EI child-absence reason. Both PedsDesk only.
-  features: { ei: false, mandates: false },
+  features: {
+    ei: false, mandates: false,
+    // Staff change / delete their own Lunch, Meeting and Unavailable blocks
+    // from the schedule's block window, also ones the office added
+    // (Kieran, Oct 2026; Kidz Lounge only). The API's rule: routes/ooo.js.
+    ownBlocks: true,
+  },
   // Patient and schedule lists (src/patientOptions.js has the program,
   // status and room lists Kidz Lounge has always had): its two case
   // managers' pills on the patient list.

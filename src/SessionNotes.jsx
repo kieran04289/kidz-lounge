@@ -14,6 +14,8 @@ import {
 } from './sessionNotePdf';
 import { buildEiPdf, sessionNoteV2Section, serviceLogSections } from './eiFormsPdf';
 import PaperworkTabs from './PaperworkTabs';
+import DictateButton from './DictateButton';
+import { appendDictation } from './dictation';
 
 // EI session notes (the "ei" feature, PedsDesk only, Oct 2026; API
 // routes/sessionNotes.js, rules in lib/sessionNotes.js). Follows the NYC EI
@@ -452,8 +454,12 @@ export function SessionNotePage() {
   const missing = dirty ? null : data.missing;
   const st = STATUS[data.status] || STATUS.none;
   const ta = (k, rows = 4, placeholder) => (
-    <textarea value={form[k]} disabled={!editable} onChange={e => set({ [k]: e.target.value })} rows={rows} placeholder={placeholder}
-      style={{ ...eiInput, resize: 'vertical', lineHeight: 1.45, background: editable ? 'white' : '#FAFAFA' }} />
+    <>
+      <textarea value={form[k]} disabled={!editable} onChange={e => set({ [k]: e.target.value })} rows={rows} placeholder={placeholder}
+        style={{ ...eiInput, resize: 'vertical', lineHeight: 1.45, background: editable ? 'white' : '#FAFAFA' }} />
+      {/* Speech-to-text into this box (the browser's own; src/DictateButton.jsx). */}
+      {editable && <DictateButton onText={words => { setForm(f => ({ ...f, [k]: appendDictation(f[k], words) })); setDirty(true); }} />}
+    </>
   );
   const row = (l, v) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, padding: '5px 0', borderBottom: `1px solid ${HAIRLINE}` }}>
@@ -743,6 +749,7 @@ export function SessionNotePage() {
               <div style={{ marginTop: 10 }}>
                 <textarea aria-label="New addendum" value={addendum} onChange={e => setAddendum(e.target.value)} rows={3} placeholder="Correction or addition, e.g. The session ended at 4:05 PM, not 4:00 PM."
                   style={{ ...eiInput, resize: 'vertical' }} />
+                <DictateButton onText={words => setAddendum(a => appendDictation(a, words))} />
                 <button type="button" disabled={!addendum.trim()} onClick={addAddendum} style={buttonStyle('secondary', { marginTop: 8 })}>Add signed addendum</button>
               </div>
             )}

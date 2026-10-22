@@ -26,3 +26,8 @@ export function sessionStyle(status) {
 // earned weekly from hours worked (lib/ptoAccrual.js there).
 export const ANNUAL_HOURS = { UPTO: 40 };
 export const monthlyAccrual = (type) => Math.round(((ANNUAL_HOURS[type] || 0) / 12) * 4) / 4;
+
+// Time a person puts on their own schedule with no approval (Kieran, Oct
+// 2026): mirrors SELF_SERVE_TYPES in the API's routes/timeOff.js and the
+// staff rule in routes/ooo.js.
+export const SELF_SERVE_TYPES = ['Lunch', 'Meeting', 'Unavailable'];

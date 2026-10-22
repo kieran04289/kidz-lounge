@@ -12,6 +12,8 @@ import { openBlob, fmtDate, fmtTime } from './sessionNotePdf';
 import { EVAL_TYPE_LABEL, ELIGIBILITY_LABEL, TELEHEALTH_REASON_LABEL, DOMAIN_ORDER } from './evalReportPdf';
 import { buildEiPdf, evalReportSection } from './eiFormsPdf';
 import PaperworkTabs from './PaperworkTabs';
+import DictateButton from './DictateButton';
+import { appendDictation } from './dictation';
 
 // EI evaluation reports (the "ei" feature, PedsDesk only, Oct 2026; API
 // routes/evalReports.js, rules in lib/evalReports.js). One report per
@@ -161,8 +163,12 @@ export function EvalReportPage() {
   const missing = dirty ? null : data.missing;
   const st = STATUS[data.status] || STATUS.none;
   const area = (value, onChange, rows = 3, placeholder) => (
-    <textarea value={value || ''} disabled={!editable} rows={rows} placeholder={placeholder} onChange={e => onChange(e.target.value)}
-      style={{ ...eiInput, resize: 'vertical', lineHeight: 1.45, background: editable ? 'white' : '#FAFAFA' }} />
+    <>
+      <textarea value={value || ''} disabled={!editable} rows={rows} placeholder={placeholder} onChange={e => onChange(e.target.value)}
+        style={{ ...eiInput, resize: 'vertical', lineHeight: 1.45, background: editable ? 'white' : '#FAFAFA' }} />
+      {/* Speech-to-text into this box (the browser's own; src/DictateButton.jsx). */}
+      {editable && <DictateButton onText={words => onChange(appendDictation(value, words))} />}
+    </>
   );
   const input = (id, labelText, value, onChange, placeholder) => (
     <div>
@@ -354,6 +360,7 @@ export function EvalReportPage() {
             {data.can_write && (
               <div style={{ marginTop: 10 }}>
                 <textarea aria-label="New addendum" value={addendum} onChange={e => setAddendum(e.target.value)} rows={3} style={{ ...eiInput, resize: 'vertical' }} placeholder="Correction or addition" />
+                <DictateButton onText={words => setAddendum(a => appendDictation(a, words))} />
                 <button type="button" disabled={busy || !addendum.trim()} onClick={() => step('addenda', { body: addendum }, () => setAddendum(''))} style={buttonStyle('secondary', { marginTop: 8 })}>Add signed addendum</button>
               </div>
             )}

@@ -14,6 +14,8 @@ import { openBlob, fmtDate, SERVICE_LABEL } from './sessionNotePdf';
 import { buildEiPdf, progressNoteSection } from './eiFormsPdf';
 import { RATING_LABEL, COMM_LABEL, DELIVERY_LABEL, TYPE_LABEL, QUESTIONS } from './progressReportPdf';
 import PaperworkTabs from './PaperworkTabs';
+import DictateButton from './DictateButton';
+import { appendDictation } from './dictation';
 
 // EI progress reports (the "ei" feature, PedsDesk only, Oct 2026; API
 // routes/progressReports.js, rules in lib/progressReports.js). The NYC
@@ -278,8 +280,12 @@ export function ProgressReportPage() {
   const missing = dirty ? null : data.missing;
   const st = STATUS[data.status] || STATUS.draft;
   const text = (value, onChange, rows = 3, placeholder) => (
-    <textarea value={value || ''} disabled={!editable} rows={rows} placeholder={placeholder} onChange={e => onChange(e.target.value)}
-      style={{ ...eiInput, resize: 'vertical', lineHeight: 1.45, background: editable ? 'white' : '#FAFAFA' }} />
+    <>
+      <textarea value={value || ''} disabled={!editable} rows={rows} placeholder={placeholder} onChange={e => onChange(e.target.value)}
+        style={{ ...eiInput, resize: 'vertical', lineHeight: 1.45, background: editable ? 'white' : '#FAFAFA' }} />
+      {/* Speech-to-text into this box (the browser's own; src/DictateButton.jsx). */}
+      {editable && <DictateButton onText={words => onChange(appendDictation(value, words))} />}
+    </>
   );
   const field = (label, k, extra = {}) => (
     <div>
@@ -321,6 +327,7 @@ export function ProgressReportPage() {
               <>
                 <p style={{ fontSize: 13, color: MUTED, margin: '0 0 8px' }}>Check every question is answered and the outcomes are rated before it goes to the service coordinator (NYC returns incomplete reports).</p>
                 <textarea aria-label="Comment for the provider" value={officeComment} onChange={e => setOfficeComment(e.target.value)} rows={2} placeholder="What needs fixing (only when returning it)" style={{ ...eiInput, resize: 'vertical' }} />
+                <DictateButton onText={words => setOfficeComment(c => appendDictation(c, words))} />
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   <button type="button" disabled={busy} onClick={() => step('office', { action: 'approve' })} style={buttonStyle('primary')}>Approve</button>
                   <button type="button" disabled={busy || !officeComment.trim()} onClick={() => step('office', { action: 'return', comment: officeComment }, () => setOfficeComment(''))} style={buttonStyle('danger')}>Return to provider</button>
@@ -510,6 +517,7 @@ export function ProgressReportPage() {
             {data.can_write && (
               <div style={{ marginTop: 10 }}>
                 <textarea aria-label="New addendum" value={addendum} onChange={e => setAddendum(e.target.value)} rows={3} style={{ ...eiInput, resize: 'vertical' }} placeholder="Correction or addition" />
+                <DictateButton onText={words => setAddendum(a => appendDictation(a, words))} />
                 <button type="button" disabled={busy || !addendum.trim()} onClick={() => step('addenda', { body: addendum }, () => setAddendum(''))} style={buttonStyle('secondary', { marginTop: 8 })}>Add signed addendum</button>
               </div>
             )}

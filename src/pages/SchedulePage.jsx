@@ -23,6 +23,7 @@ import { useAppointmentDrag } from '../useAppointmentDrag';
 import { AppointmentDragLayer, DropToast } from '../AppointmentDragLayer';
 import { saveDrop, movedFields, isMissedAppt } from '../scheduleDrag';
 import { featureOn } from '../brand';
+import { SELF_SERVE_TYPES } from '../timeTypes';
 import { ROOM_OPTIONS, rxApplies } from '../patientOptions';
 import { pollWhileVisible } from '../pageVisibility';
 
@@ -3886,6 +3887,8 @@ export function OOOModal({ existing, onClose, onSaved, onCommentsSynced, request
   const [futureMatches, setFutureMatches] = useState([]);
   const [loadingMatches, setLoadingMatches] = useState(false);
   const [pendingSeriesId, setPendingSeriesId] = useState(null);
+  // Changing a self-serve block's time here (`ownBlocks`): { start, end, scope }.
+  const [timeEdit, setTimeEdit] = useState(null);
   // A virtual (computed) weekly occurrence becomes a real row the first
   // time someone comments on it; remember that row for later comments.
   const [materializedRecord, setMaterializedRecord] = useState(null);
@@ -3937,7 +3940,13 @@ export function OOOModal({ existing, onClose, onSaved, onCommentsSynced, request
     : null;
   const isPendingRequest = link.request?.status === 'pending';
   const canEdit = !!link.request && link.can_change && !(requestOnly && isPendingRequest);
-  const canDeleteLegacy = !requestOnly && !link.loading && !link.request && isAdmin;
+  // `ownBlocks` (Kidz Lounge, Oct 2026): a block not made in My time that's
+  // Lunch / Meeting / Unavailable can be changed or deleted here by its
+  // provider (and the office), with no approval (API: routes/ooo.js).
+  const ownBlock = !!user?.providerName && existing.provider === user.providerName;
+  const canChangeBlock = featureOn('ownBlocks') && !requestOnly && !link.loading && !link.request
+    && SELF_SERVE_TYPES.includes(existing.type) && (ownBlock || isAdmin);
+  const canDeleteLegacy = !requestOnly && !link.loading && !link.request && (isAdmin || canChangeBlock);
 
   const materializeCurrentOccurrence = async () => {
     const created = await api.createOOOException(existing.series_id, {
@@ -3999,6 +4008,27 @@ export function OOOModal({ existing, onClose, onSaved, onCommentsSynced, request
       }
     }
   });
+
+  // A new time for this block: this one only, or (weekly) this and every
+  // later week, which ends the series the day before and starts a new one.
+  const saveTime = () => {
+    const { start, end, scope } = timeEdit;
+    if (!start || !end || end <= start) { setError('Choose an end time after the start time.'); return; }
+    setError(null);
+    runDelete(async () => {
+      const slot = { provider: existing.provider, type: existing.type, start_time: `${start}:00`, end_time: `${end}:00` };
+      if (seriesId && scope === 'future') {
+        const dayBefore = dateToInputValue(new Date(new Date(weekDate + 'T00:00:00').getTime() - 24 * 60 * 60 * 1000));
+        await api.endOOOSeries(seriesId, dayBefore);
+        await api.purgeFutureOOOExceptions(seriesId, weekDate);
+        await api.createOOOSeries({ ...slot, weekday: new Date(weekDate + 'T00:00:00').getDay(), start_date: weekDate });
+      } else if (existing.is_virtual) {
+        await api.createOOOException(existing.series_id, { occurrence_date: existing.ooo_date, ooo_date: existing.ooo_date, ...slot });
+      } else {
+        await api.updateOOO(existing.id, { ...slot, ooo_date: existing.ooo_date });
+      }
+    });
+  };
 
   const repeats = !!(seriesId || (requestOnly && link.request?.is_recurring));
   const withNames = isMeeting && attendees.length > 0 ? attendees.map(nameFor).join(', ') : null;
@@ -4102,7 +4132,27 @@ export function OOOModal({ existing, onClose, onSaved, onCommentsSynced, request
 
         {error && <p style={{ color: '#dc2626', fontSize: 13 }}>{error}</p>}
 
-        {confirmingDelete ? (
+        {timeEdit ? (
+          <div style={{ marginTop: 16, padding: 12, borderRadius: 6, border: '1px solid #E4E4E7', background: '#FAFAFA' }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 140px' }}><TimeField label="Start" value={timeEdit.start} onChange={v => setTimeEdit(t => ({ ...t, start: v }))} /></div>
+              <div style={{ flex: '1 1 140px' }}><TimeField label="End" value={timeEdit.end} onChange={v => setTimeEdit(t => ({ ...t, end: v }))} /></div>
+            </div>
+            {seriesId && (
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 10, fontSize: 13 }}>
+                {[['future', 'This & all future'], ['one', 'Just this one']].map(([v, label]) => (
+                  <label key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                    <input type="radio" name="ooo-time-scope" checked={timeEdit.scope === v} onChange={() => setTimeEdit(t => ({ ...t, scope: v }))} /> {label}
+                  </label>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+              <button onClick={() => { setTimeEdit(null); setError(null); }} disabled={saving} style={modalBtnStyle()}>Cancel</button>
+              <button onClick={saveTime} disabled={saving} style={modalBtnStyle(true)}>{saving ? 'Saving...' : 'Save'}</button>
+            </div>
+          </div>
+        ) : confirmingDelete ? (
           <div style={{ marginTop: 16, padding: 12, borderRadius: 3, background: '#FCEBEB', border: '1.5px solid #E9A5A5' }}>
             {loadingMatches ? (
               <p style={{ fontSize: 13, color: '#791F1F', margin: 0 }}>Checking for a repeating series...</p>
@@ -4139,6 +4189,11 @@ export function OOOModal({ existing, onClose, onSaved, onCommentsSynced, request
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={onClose} style={modalBtnStyle()}>Close</button>
+              {canChangeBlock && (
+                <button onClick={() => setTimeEdit({ start: existing.start_time.slice(0, 5), end: existing.end_time.slice(0, 5), scope: seriesId ? 'future' : 'one' })} style={modalBtnStyle(true)}>
+                  Change time
+                </button>
+              )}
               {canEdit && (
                 <button onClick={() => (onEdit ? onEdit(link.request, weekDate) : navigate(editHref))} style={modalBtnStyle(true)}>
                   {isOwner ? 'Edit in My time' : `Edit on ${nameFor(owner)}'s profile`}
