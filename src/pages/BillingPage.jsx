@@ -412,8 +412,8 @@ export default function BillingPage({ section = 'payroll' }) {
                         {d}
                       </th>
                     ))}
-                    <th style={{ ...head, textAlign: 'right' }} title="Sessions booked this month">Sched.</th>
-                    <th style={{ ...head, textAlign: 'right', borderRight: 'none' }}>Sessions</th>
+                    <th style={{ ...head, textAlign: 'right' }} title="Sessions booked this month (DOE in 30-minute units: 45 min = 1.5, 60 min = 2)">Sched.</th>
+                    <th style={{ ...head, textAlign: 'right', borderRight: 'none' }} title="Sessions provided (DOE in 30-minute units: 45 min = 1.5, 60 min = 2)">Sessions</th>
                   </tr>
                 </thead>
               </table>
