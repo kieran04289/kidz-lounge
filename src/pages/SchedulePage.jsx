@@ -286,10 +286,12 @@ export function getConflictKey(c) {
 export function computeConflicts(appointments, oooRecords, contractedGaps = [], closedDates = []) {
   const list = [];
   const closedByDate = Object.fromEntries((closedDates || []).map(c => [c.date, c]));
-  // Canceled and *HOLD* sessions aren't happening (Kieran, Oct 2026: a held
-  // slot never conflicts), so they're left out of every check -- against
-  // each other, other sessions, time off, closures and contracted hours.
-  const nonCanceled = appointments.filter(a => a.appointment_status !== 'Canceled' && a.appointment_status !== HOLD_STATUS);
+  // Canceled, No Show and *HOLD* sessions aren't happening (Kieran, Oct
+  // 2026: a held slot never conflicts; Nov 2026: nor a no-show whose time
+  // was given away), so they're left out of every check -- against each
+  // other, other sessions, time off, closures and contracted hours. The
+  // same statuses as NO_ROOM_NEEDED (src/scheduleLanes.js).
+  const nonCanceled = appointments.filter(a => !NO_ROOM_NEEDED.includes(a.appointment_status));
 
   for (let i = 0; i < nonCanceled.length; i++) {
     for (let j = i + 1; j < nonCanceled.length; j++) {
@@ -2825,8 +2827,11 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
   useEffect(() => {
     if (!appointmentDate || !appointmentTime || !duration) { setLiveConflicts([]); return; }
     if (!patientConfirmed && (!treatmentArea || isOffsite(treatmentArea))) { setLiveConflicts([]); return; }
-    // A *HOLD* session isn't happening, so it can't clash with anything.
-    if (status === HOLD_STATUS) { setLiveConflicts([]); return; }
+    // A Canceled, No Show or *HOLD* session isn't happening, so it can't
+    // clash with anything (as computeConflicts). Canceled used to be checked
+    // here, so opening a canceled session -- older ones still carry their
+    // room -- warned that its room was booked by whoever took the slot.
+    if (NO_ROOM_NEEDED.includes(status)) { setLiveConflicts([]); return; }
 
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -2836,7 +2841,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
         const draftRange = getAppointmentTimeRange({ appointment_time: appointmentTime, duration });
         const found = [];
         (dayAppointments || []).forEach(apt => {
-          if (apt.appointment_status === 'Canceled' || apt.appointment_status === HOLD_STATUS) return;
+          if (NO_ROOM_NEEDED.includes(apt.appointment_status)) return;
           if (existing && apt.id === existing.id) return; // never flag against itself when editing
           const range = getAppointmentTimeRange(apt);
           const overlaps = draftRange.start < range.end && range.start < draftRange.end;
