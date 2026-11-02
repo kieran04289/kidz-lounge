@@ -18,7 +18,7 @@ import { DISCIPLINES, DISCIPLINE_NAMES, disciplinesOf } from '../disciplines';
 import Linkify from '../Linkify';
 import LinkTextarea from '../LinkTextarea';
 import { PatientLinksList } from '../PatientLinksView';
-import { canceledLane, isCanceledAppt, NO_ROOM_NEEDED } from '../scheduleLanes';
+import { appointmentLane, STRIP_LABELS, NO_ROOM_NEEDED } from '../scheduleLanes';
 import { useAppointmentDrag } from '../useAppointmentDrag';
 import { AppointmentDragLayer, DropToast } from '../AppointmentDragLayer';
 import { saveDrop, movedFields, isMissedAppt } from '../scheduleDrag';
@@ -470,9 +470,11 @@ const ClockIcon = (p) => <Icon {...p} path={<><circle cx="12" cy="12" r="9" /><p
 
 // `setRoom`: the session has no room yet -- the badge becomes a "Set room"
 // button (same look as the Unassigned view's), opening the room menu.
-// `lane` (src/scheduleLanes.js): 'left' = the left three quarters of the
-// column, 'right' = the right quarter, beside a canceled appointment it
-// overlaps; null = full width.
+// `lane` (src/scheduleLanes.js, appointmentLane): { side: 'right' } = the
+// narrow Canceled / No Show / Hold strip in the right quarter; { side:
+// 'left', index, count, narrow } = this card's share of a column it splits
+// with overlapping sessions (of the left three quarters when `narrow`);
+// null = full width.
 // `dragProps` / `dragSource`: drag-and-drop from useAppointmentDrag.js -- the
 // press handler, and whether this is the card being dragged (faded in place).
 export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColor, heightPx, onRoomClick, onStatusClick, stackIndex = 0, hasConflict, offsetWithinSlot = 0, setRoom = false, lane = null, dragProps, dragSource = false }) {
@@ -504,10 +506,12 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
   // already means canceled, make-up scheduled). Clicking it opens the
   // canceled appointment as usual. Comments still get the red * (at the
   // top), the same marker as a full card.
-  if (lane === 'right') {
+  if (lane?.side === 'right') {
     const hasMakeup = !!apt.makeup;
+    const label = STRIP_LABELS[apt.appointment_status] || 'Canceled';
     const tagRoom = (hasMakeup && !compact ? 18 : 0) + (hasComments ? 14 : 0);
-    const fontSize = Math.max(7, Math.min(15, (heightPx - 6 - tagRoom) / 5.4));
+    // About 0.62em a letter, plus a little padding (5.4 for "Canceled").
+    const fontSize = Math.max(7, Math.min(15, (heightPx - 6 - tagRoom) / (label.length * 0.62 + 0.44)));
     const vertical = { writingMode: 'vertical-rl', transform: 'rotate(180deg)', whiteSpace: 'nowrap', fontWeight: 700, letterSpacing: '0.04em', lineHeight: 1 };
     return (
       <div
@@ -527,7 +531,7 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
           <span style={{ ...vertical, fontSize: Math.max(8, Math.min(13, (heightPx - 6 - (hasComments ? 14 : 0)) / 2.2)), color: MAKEUP_GREEN }}>MUS</span>
         ) : (
           <>
-            <span style={{ ...vertical, fontSize, color: `color-mix(in srgb, ${color} 75%, black)` }}>Canceled</span>
+            <span style={{ ...vertical, fontSize, color: `color-mix(in srgb, ${color} 75%, black)` }}>{label}</span>
             {hasMakeup && (
               <span style={{ flexShrink: 0, color: MAKEUP_GREEN, fontWeight: 700, fontSize: 9, lineHeight: 1, border: `1px solid ${MAKEUP_GREEN}`, borderRadius: 3, padding: '1px 2px', background: 'white' }}>MUS</span>
             )}
@@ -544,8 +548,10 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
         ...dragStyle,
         position: 'absolute',
         top: offsetWithinSlot + CARD_MARGIN + stackIndex * 10,
-        left: lane === 'right' ? `calc(75% + ${CARD_MARGIN}px)` : CARD_MARGIN + stackIndex * 10,
-        right: lane === 'left' ? `calc(25% + ${CARD_MARGIN}px)` : CARD_MARGIN,
+        // A shared column (src/scheduleLanes.js): its slice of the width, or
+        // of the left three quarters when a strip sits beside it.
+        left: lane?.side === 'left' ? `calc(${(lane.narrow ? 75 : 100) * lane.index / lane.count}% + ${CARD_MARGIN}px)` : CARD_MARGIN + stackIndex * 10,
+        right: lane?.side === 'left' ? `calc(${100 - (lane.narrow ? 75 : 100) * (lane.index + 1) / lane.count}% + ${CARD_MARGIN}px)` : CARD_MARGIN,
         height: heightPx,
         boxSizing: 'border-box',
         zIndex: 5 + (10 - Math.min(stackIndex, 9)),
@@ -2368,9 +2374,9 @@ function ScheduleApp() {
                             // sits exactly at its own time.
                             const span = (x) => { const st = timeToMinutes(x.appointment_time.slice(0, 5)); return [st, st + (Number(x.duration) || 30)]; };
                             const [aStart, aEnd] = span(apt);
-                            // A canceled appointment booked over sits beside it (lanes) instead of stacking.
-                            const lane = canceledLane(apt, Object.values(sourceGrid[colKey] || {}).flat());
-                            const stackIndex = cellAppointments.slice(0, cellIndex).filter(o => { const [s2, e2] = span(o); return s2 < aEnd && aStart < e2 && (!lane || isCanceledAppt(o) === isCanceledAppt(apt)); }).length;
+                            // Overlapping sessions sit side by side (lanes: src/scheduleLanes.js) instead of stacking.
+                            const lane = appointmentLane(apt, Object.values(sourceGrid[colKey] || {}).flat());
+                            const stackIndex = lane ? 0 : cellAppointments.slice(0, cellIndex).filter(o => { const [s2, e2] = span(o); return s2 < aEnd && aStart < e2; }).length;
                             const duration = Number(apt.duration) || 30;
                             // True length (a 15-minute visit is half a row), so a card never covers
                             // the next appointment starting a quarter hour later.

@@ -19,7 +19,8 @@
 - A blue line marks the current time.
 - A small alert icon on a card means the patient has an allergy or immunization note on their chart.
 - A grey dashed **Set room** on a card means it has no room yet. Click it to pick one.
-- When a canceled appointment's time has been booked again, the canceled one becomes a narrow **Canceled** strip down the right side, so both can be read.
+- When a canceled, no-show or held appointment's time has been booked again, it becomes a narrow **Canceled**, **No Show** or **Hold** strip down the right side, so both can be read.
+- When two or more sessions are booked at the same time in one column (a double booking), they sit side by side, splitting the width evenly. They keep the red conflict outline.
 - Small tags after the patient's name: **MUS** (green) on a canceled session that has a make-up booked, **MU** (green) on a make-up session, and **Eval** (blue) on an evaluation.
 
 ### Booking an appointment

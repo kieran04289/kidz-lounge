@@ -19,7 +19,7 @@ import {
 import { canManage } from '../roles';
 import { isOffGrid, needsRoom, saveSettingChange, areaAfterStatus } from '../appointmentSetting';
 import { useStickyHeight, STACK_TOP } from '../stickyLayout';
-import { canceledLane, isCanceledAppt, NO_ROOM_NEEDED } from '../scheduleLanes';
+import { appointmentLane, NO_ROOM_NEEDED } from '../scheduleLanes';
 import { useAppointmentDrag } from '../useAppointmentDrag';
 import { AppointmentDragLayer, DropToast } from '../AppointmentDragLayer';
 import { saveDrop, movedFields, isMissedAppt } from '../scheduleDrag';
@@ -718,9 +718,9 @@ export default function WeeklySchedulePage() {
                             // sits exactly at its own time.
                             const span = (x) => { const st = timeToMinutes(x.appointment_time.slice(0, 5)); return [st, st + (Number(x.duration) || 30)]; };
                             const [aStart, aEnd] = span(apt);
-                            // A canceled appointment booked over sits beside it (lanes) instead of stacking.
-                            const lane = canceledLane(apt, Object.values(grid[d.dateStr] || {}).flat());
-                            const stackIndex = cellAppointments.slice(0, cellIndex).filter(o => { const [s2, e2] = span(o); return s2 < aEnd && aStart < e2 && (!lane || isCanceledAppt(o) === isCanceledAppt(apt)); }).length;
+                            // Overlapping sessions sit side by side (lanes: src/scheduleLanes.js) instead of stacking.
+                            const lane = appointmentLane(apt, Object.values(grid[d.dateStr] || {}).flat());
+                            const stackIndex = lane ? 0 : cellAppointments.slice(0, cellIndex).filter(o => { const [s2, e2] = span(o); return s2 < aEnd && aStart < e2; }).length;
                             const duration = Number(apt.duration) || 30;
                             // True length (a 15-minute visit is half a row), so a card never covers
                             // the next appointment starting a quarter hour later.
