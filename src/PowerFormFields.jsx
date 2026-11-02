@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { DateField } from './pages/SchedulePage';
 import { formatPhone } from './phone';
 import { INK, MUTED, HAIRLINE, TONES, NUMERIC, buttonStyle } from './uiTokens';
-import { pfInputStyle, answerText, LETTERHEAD, labelDate } from './powerForms';
+import { pfInputStyle, answerText, LETTERHEAD, labelDate, patientLabelId } from './powerForms';
 import { CLINIC } from './brand';
 
 // Power Forms' fields (kidz-lounge-api lib/powerForms.js): filled in by a
@@ -176,16 +176,18 @@ export function PowerFormLetterhead() {
 }
 
 // Who the form is for, shown like a label stuck on a chart: the child's
-// name, date of birth and MRN. label: { name, dob ('YYYY-MM-DD'), mrn }.
+// name, date of birth and MRN (or EI #: patientLabelId).
+// label: { name, dob ('YYYY-MM-DD'), mrn, program, id_number }.
 export function PatientLabel({ label }) {
   if (!label?.name) return null;
+  const id = patientLabelId(label);
   return (
     <div role="note" aria-label={`This form is for ${label.name}`}
       style={{ border: `1.5px solid ${INK}`, borderRadius: 4, padding: '7px 12px 8px', background: 'white', minWidth: 200, maxWidth: '100%', boxSizing: 'border-box' }}>
       <div style={{ fontSize: 17, fontWeight: 700, color: INK, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{label.name}</div>
       <div style={{ fontSize: 13, color: INK, marginTop: 2, display: 'flex', gap: '2px 14px', flexWrap: 'wrap', ...NUMERIC }}>
         {label.dob && <span>DOB {labelDate(label.dob)}</span>}
-        {label.mrn && <span>MRN {label.mrn}</span>}
+        {id && <span>{id.label} {id.value}</span>}
       </div>
     </div>
   );

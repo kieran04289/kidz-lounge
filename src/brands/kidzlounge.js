@@ -27,6 +27,10 @@ export default {
     // from the schedule's block window, also ones the office added
     // (Kieran, Oct 2026; Kidz Lounge only). The API's rule: routes/ooo.js.
     ownBlocks: true,
+    // Power Forms' patient label shows an EI child's EI # (their ID #) in
+    // place of the MRN; other children keep the MRN (Kieran, Nov 2026;
+    // Kidz Lounge only). src/powerForms.js patientLabelId.
+    eiNumberOnForms: true,
   },
   // Patient and schedule lists (src/patientOptions.js has the program,
   // status and room lists Kidz Lounge has always had): its two case
