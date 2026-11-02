@@ -3889,6 +3889,7 @@ export function OOOModal({ existing, onClose, onSaved, onCommentsSynced, request
   const [pendingSeriesId, setPendingSeriesId] = useState(null);
   // Changing a self-serve block's time here (`ownBlocks`): { start, end, scope }.
   const [timeEdit, setTimeEdit] = useState(null);
+  const [confirmSkipDay, setConfirmSkipDay] = useState(false);
   // A virtual (computed) weekly occurrence becomes a real row the first
   // time someone comments on it; remember that row for later comments.
   const [materializedRecord, setMaterializedRecord] = useState(null);
@@ -3947,6 +3948,11 @@ export function OOOModal({ existing, onClose, onSaved, onCommentsSynced, request
   const canChangeBlock = featureOn('ownBlocks') && !requestOnly && !link.loading && !link.request
     && SELF_SERVE_TYPES.includes(existing.type) && (ownBlock || isAdmin);
   const canDeleteLegacy = !requestOnly && !link.loading && !link.request && (isAdmin || canChangeBlock);
+  // "Remove just this day" (`ownBlocks`, Kidz Lounge, Nov 2026): one date of
+  // a weekly Lunch / Meeting / Unavailable made in My time, by whoever can
+  // change that entry. The weekly entry and its other weeks stay.
+  const canSkipDay = featureOn('ownBlocks') && !requestOnly && !!seriesId && !!link.request?.is_recurring
+    && link.can_change && SELF_SERVE_TYPES.includes(existing.type);
 
   const materializeCurrentOccurrence = async () => {
     const created = await api.createOOOException(existing.series_id, {
@@ -4132,7 +4138,20 @@ export function OOOModal({ existing, onClose, onSaved, onCommentsSynced, request
 
         {error && <p style={{ color: '#dc2626', fontSize: 13 }}>{error}</p>}
 
-        {timeEdit ? (
+        {confirmSkipDay ? (
+          <div style={{ marginTop: 16, padding: 12, borderRadius: 6, background: '#FCEBEB', border: '1px solid #E9A5A5' }}>
+            <p style={{ fontSize: 13, color: '#791F1F', margin: '0 0 10px', fontWeight: 500 }}>
+              Remove this {existing.type} block on {dateLabel} only? The other weeks stay.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setConfirmSkipDay(false)} disabled={saving} style={modalBtnStyle()}>Keep</button>
+              <button onClick={() => runDelete(() => deleteThisOccurrence(seriesId))} disabled={saving}
+                style={{ padding: '7px 14px', borderRadius: 3, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: 'none', background: '#A32D2D', color: 'white' }}>
+                {saving ? 'Removing...' : 'Remove this day'}
+              </button>
+            </div>
+          </div>
+        ) : timeEdit ? (
           <div style={{ marginTop: 16, padding: 12, borderRadius: 6, border: '1px solid #E4E4E7', background: '#FAFAFA' }}>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ flex: '1 1 140px' }}><TimeField label="Start" value={timeEdit.start} onChange={v => setTimeEdit(t => ({ ...t, start: v }))} /></div>
@@ -4182,6 +4201,7 @@ export function OOOModal({ existing, onClose, onSaved, onCommentsSynced, request
             <div style={{ fontSize: 12, color: BRAND.muted, maxWidth: 260 }}>
               {link.loading ? null
                 : canDeleteLegacy ? <button onClick={openDeleteConfirm} disabled={saving} style={modalBtnStyle(false, true)}>Delete</button>
+                : canSkipDay ? <button onClick={() => { setError(null); setConfirmSkipDay(true); }} disabled={saving} style={modalBtnStyle(false, true)}>Remove just this day</button>
                 : requestOnly && isPendingRequest ? 'Waiting for an admin to approve.'
                 : !link.request ? "This entry wasn't created through My time."
                 : !canEdit ? `Only ${nameFor(owner)} or an admin can change the date or time.`
