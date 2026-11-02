@@ -11,6 +11,7 @@ import { Tag, UnderlineTabs } from '../dashboardUi';
 import { INK as UI_INK, MUTED as UI_MUTED, HAIRLINE as UI_HAIRLINE, NUMERIC, buttonStyle } from '../uiTokens';
 import { canAdminister } from '../roles';
 import TimeOffBalancesBoard from '../TimeOffBalancesBoard';
+import TimeOffTakenBoard from '../TimeOffTakenBoard';
 import Linkify from '../Linkify';
 import { allowedBalanceTypes } from '../employment';
 import LinkTextarea from '../LinkTextarea';
@@ -1081,6 +1082,8 @@ export function TimeOffManageTab({ isMobile, embedded, onChanged, forUsername, o
     { key: 'denied', label: 'Denied' },
     // Everyone's PTO / UPTO totals (the Admin page's board, not a profile's).
     ...(forUsername ? [] : [{ key: 'balances', label: 'Balances' }]),
+    // PTO / UPTO taken in a date range, everyone, with totals (Nov 2026).
+    ...(forUsername ? [] : [{ key: 'taken', label: 'Time taken' }]),
   ];
   const tab = picked || (requests && groups.pending.length === 0 ? 'upcoming' : 'pending');
   const EMPTY = {
@@ -1124,7 +1127,7 @@ export function TimeOffManageTab({ isMobile, embedded, onChanged, forUsername, o
           )}
         </div>
       </div>
-      {tab !== 'balances' && (
+      {tab !== 'balances' && tab !== 'taken' && (
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', margin: '10px 0 4px' }}>
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} aria-label="Filter by type" style={{ ...inputBox, width: isMobile ? '100%' : 'auto' }}>
           <option value="">All types</option>
@@ -1153,6 +1156,8 @@ export function TimeOffManageTab({ isMobile, embedded, onChanged, forUsername, o
 
       {tab === 'balances' ? (
         <TimeOffBalancesBoard nameQuery={nameQuery} isMobile={isMobile} onChanged={load} />
+      ) : tab === 'taken' ? (
+        <TimeOffTakenBoard nameQuery={nameQuery} isMobile={isMobile} />
       ) : requests === null ? (
         <p style={{ fontSize: 13, color: BRAND.muted }}>Loading time off...</p>
       ) : (
