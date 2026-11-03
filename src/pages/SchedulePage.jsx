@@ -12,7 +12,7 @@ import { useIsMobile } from '../useIsMobile';
 import { MeetingAgendaEditor, MeetingAgendaPlaceholder } from '../MeetingAgenda';
 import { useStaffNames } from '../staffDirectory';
 import { usePatientAlerts, alertsFor, AlertSymbol, PatientAlertsInline } from '../patientAlerts';
-import { canManage } from '../roles';
+import { canManage, canAdminister } from '../roles';
 import { useStickyHeight, stickyStackHeight, STACK_TOP } from '../stickyLayout';
 import { DISCIPLINES, DISCIPLINE_NAMES, disciplinesOf } from '../disciplines';
 import Linkify from '../Linkify';
@@ -3941,10 +3941,13 @@ export function OOOModal({ existing, onClose, onSaved, onCommentsSynced, request
     && SELF_SERVE_TYPES.includes(existing.type) && (ownBlock || isAdmin);
   const canDeleteLegacy = !requestOnly && !link.loading && !link.request && (isAdmin || canChangeBlock);
   // "Remove just this day" (`ownBlocks`, Kidz Lounge, Nov 2026): one date of
-  // a weekly Lunch / Meeting / Unavailable made in My time, by whoever can
-  // change that entry. The weekly entry and its other weeks stay.
+  // a weekly entry made in My time. The weekly entry and its other weeks
+  // stay. Staff: only their own Lunch / Meeting / Unavailable (anything else
+  // needs approval). Admins / Developers: any type, e.g. a weekly "Other:
+  // out of the office", without editing it on the person's profile
+  // (Kieran, Nov 2026). PTO / UPTO can't be weekly, so no balance changes.
   const canSkipDay = featureOn('ownBlocks') && !requestOnly && !!seriesId && !!link.request?.is_recurring
-    && link.can_change && SELF_SERVE_TYPES.includes(existing.type);
+    && link.can_change && (SELF_SERVE_TYPES.includes(existing.type) || canAdminister(user));
 
   const materializeCurrentOccurrence = async () => {
     const created = await api.createOOOException(existing.series_id, {
