@@ -40,6 +40,12 @@ To correct a PTO balance, click the number, type the new total, add a reason if 
 
 One person's balances are also on their profile, under **Time off**, then **Balances**.
 
+### Time taken in a date range
+
+The **Time taken** tab shows how much PTO and UPTO each employee took between two dates, with a **Total** row underneath. It opens on this month. Pick other dates with **From** and **To**, or use **This month**, **Last month** or **This year**. Click a name to see the requests behind the hours. **Export CSV** downloads the table.
+
+Each request counts the hours it was approved for. A request that runs past either date counts only its part inside the range. The billing sheet's **PTO taken** and **UPTO taken** use the same hours.
+
 ### Entering someone's starting PTO
 
 1. Open their profile, go to **Time off**, then the **Balances** tab.

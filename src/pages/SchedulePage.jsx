@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { seriesIdOf } from '../appointmentSetting';
 import { CENTER, SETTINGS, isOffsite, offsiteLocation, offsiteSetting, settingOfArea, roomOfArea, needsRoom, isOffGrid, saveSettingChange, areaAfterStatus, VIRTUAL, holdsRoom } from '../appointmentSetting';
 import { api } from '../api';
@@ -18,7 +18,7 @@ import { DISCIPLINES, DISCIPLINE_NAMES, disciplinesOf } from '../disciplines';
 import Linkify from '../Linkify';
 import LinkTextarea from '../LinkTextarea';
 import { PatientLinksList } from '../PatientLinksView';
-import { canceledLane, isCanceledAppt, NO_ROOM_NEEDED } from '../scheduleLanes';
+import { appointmentLane, STRIP_LABELS, NO_ROOM_NEEDED } from '../scheduleLanes';
 import { useAppointmentDrag } from '../useAppointmentDrag';
 import { AppointmentDragLayer, DropToast } from '../AppointmentDragLayer';
 import { saveDrop, movedFields, isMissedAppt } from '../scheduleDrag';
@@ -286,10 +286,12 @@ export function getConflictKey(c) {
 export function computeConflicts(appointments, oooRecords, contractedGaps = [], closedDates = []) {
   const list = [];
   const closedByDate = Object.fromEntries((closedDates || []).map(c => [c.date, c]));
-  // Canceled and *HOLD* sessions aren't happening (Kieran, Oct 2026: a held
-  // slot never conflicts), so they're left out of every check -- against
-  // each other, other sessions, time off, closures and contracted hours.
-  const nonCanceled = appointments.filter(a => a.appointment_status !== 'Canceled' && a.appointment_status !== HOLD_STATUS);
+  // Canceled, No Show and *HOLD* sessions aren't happening (Kieran, Oct
+  // 2026: a held slot never conflicts; Nov 2026: nor a no-show whose time
+  // was given away), so they're left out of every check -- against each
+  // other, other sessions, time off, closures and contracted hours. The
+  // same statuses as NO_ROOM_NEEDED (src/scheduleLanes.js).
+  const nonCanceled = appointments.filter(a => !NO_ROOM_NEEDED.includes(a.appointment_status));
 
   for (let i = 0; i < nonCanceled.length; i++) {
     for (let j = i + 1; j < nonCanceled.length; j++) {
@@ -470,9 +472,11 @@ const ClockIcon = (p) => <Icon {...p} path={<><circle cx="12" cy="12" r="9" /><p
 
 // `setRoom`: the session has no room yet -- the badge becomes a "Set room"
 // button (same look as the Unassigned view's), opening the room menu.
-// `lane` (src/scheduleLanes.js): 'left' = the left three quarters of the
-// column, 'right' = the right quarter, beside a canceled appointment it
-// overlaps; null = full width.
+// `lane` (src/scheduleLanes.js, appointmentLane): { side: 'right' } = the
+// narrow Canceled / No Show / Hold strip in the right quarter; { side:
+// 'left', index, count, narrow } = this card's share of a column it splits
+// with overlapping sessions (of the left three quarters when `narrow`);
+// null = full width.
 // `dragProps` / `dragSource`: drag-and-drop from useAppointmentDrag.js -- the
 // press handler, and whether this is the card being dragged (faded in place).
 export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColor, heightPx, onRoomClick, onStatusClick, stackIndex = 0, hasConflict, offsetWithinSlot = 0, setRoom = false, lane = null, dragProps, dragSource = false }) {
@@ -504,10 +508,12 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
   // already means canceled, make-up scheduled). Clicking it opens the
   // canceled appointment as usual. Comments still get the red * (at the
   // top), the same marker as a full card.
-  if (lane === 'right') {
+  if (lane?.side === 'right') {
     const hasMakeup = !!apt.makeup;
+    const label = STRIP_LABELS[apt.appointment_status] || 'Canceled';
     const tagRoom = (hasMakeup && !compact ? 18 : 0) + (hasComments ? 14 : 0);
-    const fontSize = Math.max(7, Math.min(15, (heightPx - 6 - tagRoom) / 5.4));
+    // About 0.62em a letter, plus a little padding (5.4 for "Canceled").
+    const fontSize = Math.max(7, Math.min(15, (heightPx - 6 - tagRoom) / (label.length * 0.62 + 0.44)));
     const vertical = { writingMode: 'vertical-rl', transform: 'rotate(180deg)', whiteSpace: 'nowrap', fontWeight: 700, letterSpacing: '0.04em', lineHeight: 1 };
     return (
       <div
@@ -527,7 +533,7 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
           <span style={{ ...vertical, fontSize: Math.max(8, Math.min(13, (heightPx - 6 - (hasComments ? 14 : 0)) / 2.2)), color: MAKEUP_GREEN }}>MUS</span>
         ) : (
           <>
-            <span style={{ ...vertical, fontSize, color: `color-mix(in srgb, ${color} 75%, black)` }}>Canceled</span>
+            <span style={{ ...vertical, fontSize, color: `color-mix(in srgb, ${color} 75%, black)` }}>{label}</span>
             {hasMakeup && (
               <span style={{ flexShrink: 0, color: MAKEUP_GREEN, fontWeight: 700, fontSize: 9, lineHeight: 1, border: `1px solid ${MAKEUP_GREEN}`, borderRadius: 3, padding: '1px 2px', background: 'white' }}>MUS</span>
             )}
@@ -544,8 +550,10 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
         ...dragStyle,
         position: 'absolute',
         top: offsetWithinSlot + CARD_MARGIN + stackIndex * 10,
-        left: lane === 'right' ? `calc(75% + ${CARD_MARGIN}px)` : CARD_MARGIN + stackIndex * 10,
-        right: lane === 'left' ? `calc(25% + ${CARD_MARGIN}px)` : CARD_MARGIN,
+        // A shared column (src/scheduleLanes.js): its slice of the width, or
+        // of the left three quarters when a strip sits beside it.
+        left: lane?.side === 'left' ? `calc(${(lane.narrow ? 75 : 100) * lane.index / lane.count}% + ${CARD_MARGIN}px)` : CARD_MARGIN + stackIndex * 10,
+        right: lane?.side === 'left' ? `calc(${100 - (lane.narrow ? 75 : 100) * (lane.index + 1) / lane.count}% + ${CARD_MARGIN}px)` : CARD_MARGIN,
         height: heightPx,
         boxSizing: 'border-box',
         zIndex: 5 + (10 - Math.min(stackIndex, 9)),
@@ -621,25 +629,6 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
           {apt.appointment_status}{apt.appointment_status === 'Canceled' && CANCEL_REASON_SHORT[apt.cancel_reason] ? ` · ${CANCEL_REASON_SHORT[apt.cancel_reason]}` : apt.appointment_status === 'Canceled' && apt.missed_by === 'provider' ? ' · Provider' : ''}
         </span>
       </div>
-      {/* PedsDesk: the session's EI note, one click from the card (Kieran,
-          Oct 2026). Neutral like "Set room"; nothing once the note is done.
-          From the API (lib/eiNoteMarks.js). */}
-      {!compact && apt.ei_note && apt.ei_note.status !== 'complete' && (
-        <div style={{ flexShrink: 0, lineHeight: 1.2, position: 'relative', zIndex: 1 }}>
-          <Link
-            to={`/session-notes/note?key=${encodeURIComponent(apt.ei_note.key)}`}
-            onClick={(e) => { e.stopPropagation(); }}
-            title="Open this session's note"
-            style={{
-              display: 'inline-flex', alignItems: 'center', maxWidth: '100%', whiteSpace: 'nowrap', textDecoration: 'none',
-              fontSize: 10, fontWeight: 500, lineHeight: 1.3, borderRadius: 'var(--brand-pill-radius)', padding: '0 6px',
-              border: '1px dashed #d1d5db', background: 'rgba(255,255,255,0.6)', color: '#6b7280',
-            }}
-          >
-            {{ none: 'Write note', draft: 'Finish note', needs_parent: 'Note: parent to sign', needs_provider: 'Note: sign', needs_supervisor: 'Note: co-sign' }[apt.ei_note.status] || 'Note'}
-          </Link>
-        </div>
-      )}
       {alertCount > 0 && (
         <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 2, zIndex: 0 }}>
           {patientAlert.allergies && <AlertSymbol kind="allergies" size={13} title={`Allergies: ${patientAlert.allergies}`} />}
@@ -2368,9 +2357,9 @@ function ScheduleApp() {
                             // sits exactly at its own time.
                             const span = (x) => { const st = timeToMinutes(x.appointment_time.slice(0, 5)); return [st, st + (Number(x.duration) || 30)]; };
                             const [aStart, aEnd] = span(apt);
-                            // A canceled appointment booked over sits beside it (lanes) instead of stacking.
-                            const lane = canceledLane(apt, Object.values(sourceGrid[colKey] || {}).flat());
-                            const stackIndex = cellAppointments.slice(0, cellIndex).filter(o => { const [s2, e2] = span(o); return s2 < aEnd && aStart < e2 && (!lane || isCanceledAppt(o) === isCanceledAppt(apt)); }).length;
+                            // Overlapping sessions sit side by side (lanes: src/scheduleLanes.js) instead of stacking.
+                            const lane = appointmentLane(apt, Object.values(sourceGrid[colKey] || {}).flat());
+                            const stackIndex = lane ? 0 : cellAppointments.slice(0, cellIndex).filter(o => { const [s2, e2] = span(o); return s2 < aEnd && aStart < e2; }).length;
                             const duration = Number(apt.duration) || 30;
                             // True length (a 15-minute visit is half a row), so a card never covers
                             // the next appointment starting a quarter hour later.
@@ -2819,8 +2808,11 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
   useEffect(() => {
     if (!appointmentDate || !appointmentTime || !duration) { setLiveConflicts([]); return; }
     if (!patientConfirmed && (!treatmentArea || isOffsite(treatmentArea))) { setLiveConflicts([]); return; }
-    // A *HOLD* session isn't happening, so it can't clash with anything.
-    if (status === HOLD_STATUS) { setLiveConflicts([]); return; }
+    // A Canceled, No Show or *HOLD* session isn't happening, so it can't
+    // clash with anything (as computeConflicts). Canceled used to be checked
+    // here, so opening a canceled session -- older ones still carry their
+    // room -- warned that its room was booked by whoever took the slot.
+    if (NO_ROOM_NEEDED.includes(status)) { setLiveConflicts([]); return; }
 
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -2830,7 +2822,7 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
         const draftRange = getAppointmentTimeRange({ appointment_time: appointmentTime, duration });
         const found = [];
         (dayAppointments || []).forEach(apt => {
-          if (apt.appointment_status === 'Canceled' || apt.appointment_status === HOLD_STATUS) return;
+          if (NO_ROOM_NEEDED.includes(apt.appointment_status)) return;
           if (existing && apt.id === existing.id) return; // never flag against itself when editing
           const range = getAppointmentTimeRange(apt);
           const overlaps = draftRange.start < range.end && range.start < draftRange.end;
@@ -3889,6 +3881,7 @@ export function OOOModal({ existing, onClose, onSaved, onCommentsSynced, request
   const [pendingSeriesId, setPendingSeriesId] = useState(null);
   // Changing a self-serve block's time here (`ownBlocks`): { start, end, scope }.
   const [timeEdit, setTimeEdit] = useState(null);
+  const [confirmSkipDay, setConfirmSkipDay] = useState(false);
   // A virtual (computed) weekly occurrence becomes a real row the first
   // time someone comments on it; remember that row for later comments.
   const [materializedRecord, setMaterializedRecord] = useState(null);
@@ -3947,6 +3940,11 @@ export function OOOModal({ existing, onClose, onSaved, onCommentsSynced, request
   const canChangeBlock = featureOn('ownBlocks') && !requestOnly && !link.loading && !link.request
     && SELF_SERVE_TYPES.includes(existing.type) && (ownBlock || isAdmin);
   const canDeleteLegacy = !requestOnly && !link.loading && !link.request && (isAdmin || canChangeBlock);
+  // "Remove just this day" (`ownBlocks`, Kidz Lounge, Nov 2026): one date of
+  // a weekly Lunch / Meeting / Unavailable made in My time, by whoever can
+  // change that entry. The weekly entry and its other weeks stay.
+  const canSkipDay = featureOn('ownBlocks') && !requestOnly && !!seriesId && !!link.request?.is_recurring
+    && link.can_change && SELF_SERVE_TYPES.includes(existing.type);
 
   const materializeCurrentOccurrence = async () => {
     const created = await api.createOOOException(existing.series_id, {
@@ -4132,7 +4130,20 @@ export function OOOModal({ existing, onClose, onSaved, onCommentsSynced, request
 
         {error && <p style={{ color: '#dc2626', fontSize: 13 }}>{error}</p>}
 
-        {timeEdit ? (
+        {confirmSkipDay ? (
+          <div style={{ marginTop: 16, padding: 12, borderRadius: 6, background: '#FCEBEB', border: '1px solid #E9A5A5' }}>
+            <p style={{ fontSize: 13, color: '#791F1F', margin: '0 0 10px', fontWeight: 500 }}>
+              Remove this {existing.type} block on {dateLabel} only? The other weeks stay.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setConfirmSkipDay(false)} disabled={saving} style={modalBtnStyle()}>Keep</button>
+              <button onClick={() => runDelete(() => deleteThisOccurrence(seriesId))} disabled={saving}
+                style={{ padding: '7px 14px', borderRadius: 3, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: 'none', background: '#A32D2D', color: 'white' }}>
+                {saving ? 'Removing...' : 'Remove this day'}
+              </button>
+            </div>
+          </div>
+        ) : timeEdit ? (
           <div style={{ marginTop: 16, padding: 12, borderRadius: 6, border: '1px solid #E4E4E7', background: '#FAFAFA' }}>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ flex: '1 1 140px' }}><TimeField label="Start" value={timeEdit.start} onChange={v => setTimeEdit(t => ({ ...t, start: v }))} /></div>
@@ -4182,6 +4193,7 @@ export function OOOModal({ existing, onClose, onSaved, onCommentsSynced, request
             <div style={{ fontSize: 12, color: BRAND.muted, maxWidth: 260 }}>
               {link.loading ? null
                 : canDeleteLegacy ? <button onClick={openDeleteConfirm} disabled={saving} style={modalBtnStyle(false, true)}>Delete</button>
+                : canSkipDay ? <button onClick={() => { setError(null); setConfirmSkipDay(true); }} disabled={saving} style={modalBtnStyle(false, true)}>Remove just this day</button>
                 : requestOnly && isPendingRequest ? 'Waiting for an admin to approve.'
                 : !link.request ? "This entry wasn't created through My time."
                 : !canEdit ? `Only ${nameFor(owner)} or an admin can change the date or time.`

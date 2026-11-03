@@ -286,6 +286,8 @@ export const api = {
   setPtoAsOf: (username, hours, asOfDate) => request('/time-off/balances/as-of', { method: 'PUT', body: JSON.stringify({ username, hours, as_of_date: asOfDate }) }),
   // Admin: every active employee's employment type, PTO, UPTO used this year and pending hours.
   getAllTimeOffBalances: () => request('/time-off/balances/all'),
+  // PTO / UPTO taken per person in a date range (Admin > Time off > Time taken).
+  getTimeOffTaken: (from, to) => request(`/time-off/taken?from=${from}&to=${to}`),
 
   getMyProfile: () => request('/staff/me'),
   updateMyProfile: (record) => request('/staff/me', { method: 'PUT', body: JSON.stringify(record) }),

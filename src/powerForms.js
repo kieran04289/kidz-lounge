@@ -1,6 +1,6 @@
 import { INK } from './uiTokens';
 import { loadPdfMake } from './manualPdf';
-import { CLINIC } from './brand';
+import { CLINIC, featureOn } from './brand';
 
 // Helpers for Power Forms (PowerFormFields.jsx, PowerFormPage.jsx,
 // PowerFormsChartTab.jsx): the fields' input look, an answer as text, and
@@ -51,7 +51,18 @@ function logoDataUrl() {
 }
 
 // patient: { Name, Date_of_Birth, mrn } (the chart's patient).
+// The number on a form's patient label: the MRN, or, at a clinic with
+// `eiNumberOnForms` (Kidz Lounge), an EI child's EI # (their ID #, the EI
+// child ID) when they have one. EI child = EI among their programs.
+// `p`: { program, id_number, mrn } -> { label: 'MRN' | 'EI #', value } or null.
+export function patientLabelId(p) {
+  const isEi = String(p?.program || '').split(',').some(x => x.trim().toUpperCase() === 'EI');
+  if (featureOn('eiNumberOnForms') && isEi && p.id_number) return { label: 'EI #', value: String(p.id_number) };
+  return p?.mrn ? { label: 'MRN', value: String(p.mrn) } : null;
+}
+
 export async function buildPowerFormPdf(form, patient) {
+  const labelId = patientLabelId({ program: patient.Program, id_number: patient.ID_Number, mrn: patient.mrn });
   const dob = patient.Date_of_Birth ? String(patient.Date_of_Birth).slice(0, 10) : '';
   const [pdfMake, logo] = await Promise.all([loadPdfMake(), logoDataUrl()]);
   const content = [
@@ -75,7 +86,7 @@ export async function buildPowerFormPdf(form, patient) {
           table: { widths: ['*'], body: [[{
             stack: [
               { text: patient.Name || '', fontSize: 13, bold: true, margin: [0, 1, 0, 2] },
-              { text: [dob && `DOB ${labelDate(dob)}`, patient.mrn && `MRN ${patient.mrn}`].filter(Boolean).join('   '), fontSize: 9.5 },
+              { text: [dob && `DOB ${labelDate(dob)}`, labelId && `${labelId.label} ${labelId.value}`].filter(Boolean).join('   '), fontSize: 9.5 },
             ],
             margin: [6, 5, 6, 5],
           }]] },

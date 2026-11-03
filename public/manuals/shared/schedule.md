@@ -15,11 +15,12 @@
 - Each column is a provider, and each card is an appointment. A card shows the patient, the time and length, the room, and the status.
 - The **ST / OT / PT / SI** buttons show only providers of that specialty. Pick more than one to combine them, or **All** for everyone. The app remembers your choice.
 - Coloured blocks are time a provider isn't seeing patients: lunch, meetings, PTO and other time off. Click one to see its details.
-- Your own **lunch**, **meeting** and **unavailable** blocks have **Change time** and **Delete** (where your clinic has this turned on). No approval is needed. For a weekly block, choose **This & all future** or **Just this one**. A block you added in **My time** is changed there instead.
+- Your own **lunch**, **meeting** and **unavailable** blocks have **Change time** and **Delete** (where your clinic has this turned on). No approval is needed. For a weekly block, choose **This & all future** or **Just this one**. A block you added in **My time** is changed there instead, but a weekly one has **Remove just this day** to take off a single date and keep the other weeks.
 - A blue line marks the current time.
 - A small alert icon on a card means the patient has an allergy or immunization note on their chart.
 - A grey dashed **Set room** on a card means it has no room yet. Click it to pick one.
-- When a canceled appointment's time has been booked again, the canceled one becomes a narrow **Canceled** strip down the right side, so both can be read.
+- When a canceled, no-show or held appointment's time has been booked again, it becomes a narrow **Canceled**, **No Show** or **Hold** strip down the right side, so both can be read.
+- When two or more sessions are booked at the same time in one column (a double booking), they sit side by side, splitting the width evenly. They keep the red conflict outline.
 - Small tags after the patient's name: **MUS** (green) on a canceled session that has a make-up booked, **MU** (green) on a make-up session, and **Eval** (blue) on an evaluation.
 
 ### Booking an appointment
@@ -133,5 +134,5 @@ Click a conflict to open the appointments involved and fix one. If a conflict is
 
 **Outside contracted hours on purpose:** the provider or an admin can click **Okay outside hours** on the conflict, or click the ✓ beside **Okay it?** in the appointment window (with an optional note). The conflict goes away for everyone. A repeating session is okayed for every week. Moving the session to another date, time, length or provider takes the okay away, so the new time gets checked again. The appointment window shows who okayed it, with **Take back the okay**.
 
-Sessions with the **\*HOLD\*** status never show conflicts, because they aren't happening.
+Sessions that are **Canceled**, **No Show** or **\*HOLD\*** never show conflicts, because they aren't happening. Their time can be booked again.
 <!-- end -->

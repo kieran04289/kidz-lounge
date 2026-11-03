@@ -1,19 +1,20 @@
 name: Nightly release to Kidz Lounge
 
 # Kidz Lounge's Vercel project deploys the `production` branch; the Demo
-# project deploys main. At 11:30 PM New York time, after the API's 11 PM
-# release, this merges main into `production` with a new release commit, and
-# Vercel deploys it.
-# If the API's release failed, it stops, so the site never runs ahead of the
-# API it needs.
+# project deploys main. Each night after the API's 2 AM release, this merges
+# main into `production` with a new release commit, and Vercel deploys it.
+# It waits until the API's `production` branch has everything on the API's
+# main, so the site never runs ahead of the API it needs.
 #
-# GitHub schedules are in UTC, so there are two: only the one that lands on
-# 11:30 PM in New York (summer or winter time) goes ahead.
-# "Run workflow" on this workflow's Actions page = release now (urgent fixes).
+# GitHub starts scheduled runs late, often by hours (Nov 2026), so it checks
+# every hour, half an hour after the API's checks, and goes ahead only
+# between 2 and 5 AM in New York once the API is released. A night with
+# nothing new does nothing.
+# "Run workflow" on this workflow's Actions page = release now (urgent fixes;
+# release the API first).
 on:
   schedule:
-    - cron: '30 3 * * *' # 11:30 PM EDT (summer)
-    - cron: '30 4 * * *' # 11:30 PM EST (winter)
+    - cron: '37 * * * *' # hourly, half an hour after the API's
   workflow_dispatch:
 
 concurrency:
@@ -27,32 +28,35 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Is it 11:30 PM in New York?
+      - name: Is it between 2 and 5 AM in New York?
         id: when
         run: |
-          if [ "${{ github.event_name }}" = schedule ]; then
-            zone=$(TZ=America/New_York date +%Z)
-            case "${{ github.event.schedule }}/$zone" in
-              "30 3 * * */EDT"|"30 4 * * */EST") ;;
-              *) echo "Not 11:30 PM in New York ($zone); the other schedule handles tonight."; echo go=false >> "$GITHUB_OUTPUT"; exit 0 ;;
-            esac
+          hour=$(TZ=America/New_York date +%H)
+          if [ "${{ github.event_name }}" = schedule ] && { [ "$hour" -lt 2 ] || [ "$hour" -ge 5 ]; }; then
+            echo "Not between 2 and 5 AM in New York; waiting."; echo go=false >> "$GITHUB_OUTPUT"; exit 0
           fi
           echo go=true >> "$GITHUB_OUTPUT"
 
-      - name: Check the API's release didn't fail
+      # Checked by comparing the API's branches, not its latest run: an
+      # hourly check that skipped also counts as a successful run.
+      - name: Has the API been released?
+        id: api
         if: steps.when.outputs.go == 'true'
         run: |
-          run=$(curl -fsS "https://api.github.com/repos/${{ github.repository_owner }}/kidz-lounge-api/actions/workflows/release.yml/runs?per_page=1" \
-            | jq -r '.workflow_runs[0] // empty | "\(.status) \(.conclusion)"')
-          echo "API's latest release: ${run:-none yet}"
-          case "$run" in
-            ""|"completed success") ;;
-            "completed "*) echo "::error::The API's release didn't succeed, so the website waits. Fix it, then use Run workflow on both repos."; exit 1 ;;
-            *) echo "::error::The API's release is still running. Try Run workflow again in a few minutes."; exit 1 ;;
-          esac
+          behind=$(curl -fsS "https://api.github.com/repos/${{ github.repository_owner }}/kidz-lounge-api/compare/production...main" | jq -r '.ahead_by' || true)
+          if [ "$behind" = 0 ]; then
+            echo "The API's release is done."; echo go=true >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo go=false >> "$GITHUB_OUTPUT"
+          msg="The API's main has ${behind:-unknown} commit(s) not yet released to Kidz Lounge, so the website waits."
+          if [ "${{ github.event_name }}" = schedule ]; then
+            echo "$msg The next hourly check tries again."
+          else
+            echo "::error::$msg Run the API's release first, then this one."; exit 1
+          fi
 
       - uses: actions/checkout@v4
-        if: steps.when.outputs.go == 'true'
+        if: steps.api.outputs.go == 'true'
         with:
           fetch-depth: 0
 
@@ -60,7 +64,7 @@ jobs:
       # Vercel skips a commit it already built (as main's preview), so
       # pushing the same commit to `production` deployed nothing (Oct 2026).
       - name: Release
-        if: steps.when.outputs.go == 'true'
+        if: steps.api.outputs.go == 'true'
         run: |
           sha="${{ github.sha }}"
           # Signed as the author of the commit being released (Kieran), not
