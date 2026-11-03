@@ -101,6 +101,41 @@ Make-ups are booked from the session that was missed. Make Up and MUS are no lon
 - You can also drag a canceled card to an empty spot to book its make-up there (see [Moving an appointment by dragging](#moving-an-appointment-by-dragging)).
 - A canceled HOLD can't have a make-up, because it isn't a real session.
 
+### Group classes
+
+A group class is one provider with several children at the same time. Each child still has their own session, billed under their own program, but the schedule shows the class as one card.
+
+**Booking a class**
+
+1. Click **Create Appointment**, then **Group class** at the top.
+2. Give the class a name, for example "Social skills group".
+3. Search for each child and pick them from the list (2 to 10 children).
+4. Choose the **provider**, **setting**, **date**, **time** and **length**.
+5. A class repeats weekly with no end date unless you change it. Click **Book class**.
+
+![Booking a group class](../img/schedule-group-new.png)
+
+**On the schedule**
+
+The card shows the class name with a **Group** tag, and how many children have each status, for example "2 Confirmed · 1 Canceled · 1 Scheduled". The bar down the left side has one stripe per child, in that child's status colour. Hover over the card to see who is which. If every child is out, the card moves to the narrow canceled strip.
+
+**Changing a class**
+
+Click the card to open the class. It works like an appointment:
+
+- Change the provider, setting, date, time or length, then click **Save**. Every child in the class moves. For a weekly class you're asked whether it's **just this one** or **this and all future** weeks.
+- Change each child's status next to their name. These save straight away. Canceling a School or Home session asks for a reason (Holiday, Emergency Closure or Other).
+- A canceled or no-show child gets a **Schedule make up** link.
+- Use **+ Add a child** or the **×** beside a name to change who's in the class, for this week only or from now on.
+- **Comments** belong to the class and everyone can see them. A weekly class has its own comments each week.
+- The **Patient Info** tab has a tab for each child.
+- **Delete** removes every child's session. If the class didn't happen, set the children to Canceled instead, so the record is kept.
+- You can drag the card to move the whole class for that day.
+
+![A group class](../img/schedule-group-class.png)
+
+Opening a child's session anywhere else, for example from their chart, opens the class.
+
 ### Meetings and time off on the schedule
 
 Click a coloured block to see who it's for, when, and any notes. Meetings also show who's invited, the agenda, and comments shared with everyone in the meeting. To change the agenda, click **Edit agenda**, make your changes, then **Save agenda**.

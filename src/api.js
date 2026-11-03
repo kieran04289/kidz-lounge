@@ -202,6 +202,20 @@ export const api = {
   deleteAppointmentComment: (id, commentId) => request(`/appointments/${id}/comments`, { method: 'PUT', body: JSON.stringify({ action: 'delete', commentId }) }),
   deleteAppointment: (id) => request(`/appointments/${id}`, { method: 'DELETE' }),
 
+  // ---- Group classes (kidz-lounge-api routes/groupClasses.js; src/groupClasses.js) ----
+  // { name, provider, date, appointment_time, duration, treatment_area, appointment_status, weekly, end_date, patients }
+  createGroupClass: (body) => request('/group-classes', { method: 'POST', body: JSON.stringify(body) }),
+  getGroupClass: (id) => request(`/group-classes/${id}`),
+  renameGroupClass: (id, name) => request(`/group-classes/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }),
+  // body: { patient_name, date, from_time, scope: 'one' | 'future', ...the session as shown that day }
+  addGroupClassChild: (id, body) => request(`/group-classes/${id}/attendees`, { method: 'POST', body: JSON.stringify(body) }),
+  removeGroupClassChild: (id, body) => request(`/group-classes/${id}/attendees/remove`, { method: 'POST', body: JSON.stringify(body) }),
+  // body: { date, from_time, scope, and any of appointment_date, appointment_time, duration, provider, treatment_area }
+  moveGroupClass: (id, body) => request(`/group-classes/${id}/move`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteGroupClass: (id, body) => request(`/group-classes/${id}/delete`, { method: 'POST', body: JSON.stringify(body) }),
+  // One thread per class sitting: { date, action: 'append', text } or { date, action: 'delete', commentId } -> { comments }
+  groupClassComment: (id, body) => request(`/group-classes/${id}/comments`, { method: 'PUT', body: JSON.stringify(body) }),
+
   // ---- Out of Office ----
   getOOO: (date) => request(`/ooo?date=${date}`),
   getOOORange: (provider, start, end) => request(`/ooo/range?provider=${encodeURIComponent(provider || '')}&start=${start}&end=${end}`),

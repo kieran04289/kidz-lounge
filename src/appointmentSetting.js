@@ -97,3 +97,11 @@ export async function saveSettingChange(apt, area, allFuture) {
   }
   return null;
 }
+
+// Why a canceled offsite session didn't happen (optional). Billing shows
+// Holiday as H and Emergency Closure as Z, like an office closure; Other = A.
+// Mirrors kidz-lounge-api lib/cancelReason.js.
+export const CANCEL_REASONS = [['holiday', 'Holiday'], ['emergency', 'Emergency Closure'], ['other', 'Other - see comments']];
+// Why a child missed an EI session (the "mandates" feature); mirrors
+// kidz-lounge-api lib/absenceReason.js.
+export const ABSENCE_REASONS = [['illness', 'Illness'], ['vacation', 'Family vacation (no make-up)'], ['other', 'Other']];

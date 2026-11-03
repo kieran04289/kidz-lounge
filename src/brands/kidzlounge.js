@@ -31,6 +31,9 @@ export default {
     // place of the MRN; other children keep the MRN (Kieran, Nov 2026;
     // Kidz Lounge only). src/powerForms.js patientLabelId.
     eiNumberOnForms: true,
+    // Booking a group class (src/groupClasses.js; Kieran, Nov 2026: on at
+    // both clinics once PedsDesk's was checked).
+    groupClasses: true,
   },
   // Patient and schedule lists (src/patientOptions.js has the program,
   // status and room lists Kidz Lounge has always had): its two case

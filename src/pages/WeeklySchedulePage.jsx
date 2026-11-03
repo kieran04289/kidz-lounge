@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
-import { canOkayHours, setHoursOk } from '../hoursOk';
+import { canOkayHours, setHoursOkFor } from '../hoursOk';
 import { opensWindowForStatus } from '../eiCancel';
 import { useIsMobile } from '../useIsMobile';
 import {
@@ -24,6 +24,8 @@ import { useAppointmentDrag } from '../useAppointmentDrag';
 import { AppointmentDragLayer, DropToast } from '../AppointmentDragLayer';
 import { saveDrop, movedFields, isMissedAppt } from '../scheduleDrag';
 import { pollWhileVisible } from '../pageVisibility';
+import { collapseGroups, inConflict, conflictName } from '../groupClasses';
+import { GroupClassModal } from '../GroupClassModal';
 
 // Phone/tablet header controls: one height, big enough to tap.
 const MOBILE_CONTROL_H = 38;
@@ -96,6 +98,8 @@ export default function WeeklySchedulePage() {
 
   const [roomDropdown, setRoomDropdown] = useState(null); // { apt, top, left }
   const [statusDropdown, setStatusDropdown] = useState(null); // { apt, top, left }
+  // A group class card (src/groupClasses.js) opens its own window.
+  const [openGroup, setOpenGroup] = useState(null);
   const [showConflictDetails, setShowConflictDetails] = useState(false);
   const [lookaheadConflicts, setLookaheadConflicts] = useState([]);
   // Which provider's week last finished loading. A Symbol to start, so it
@@ -130,6 +134,14 @@ export default function WeeklySchedulePage() {
     weekConflicts.forEach(c => { ids.add(c.a.id); if (c.kind === 'pair') ids.add(c.b.id); });
     return ids;
   }, [weekConflicts]);
+
+  // What's drawn: each group class sitting as one card. Conflicts above and
+  // the time-off overlay use every child's own session.
+  const shown = useMemo(() => collapseGroups(appointments), [appointments]);
+  const openCard = (apt) => {
+    if (apt.is_group) { setOpenGroup(apt); return; }
+    setEditingAppointment(apt); setShowModal(true);
+  };
 
   const displayedDateStrs = useMemo(() => new Set(daysToShow.map(d => d.dateStr)), [daysToShow]);
   const futureLookaheadConflicts = useMemo(() => {
@@ -216,7 +228,9 @@ export default function WeeklySchedulePage() {
     // it back if the save failed).
     if (!isMissedAppt(apt)) {
       const moved = movedFields(apt, target);
-      setAppointments(prev => prev.map(a => (a.id === apt.id ? { ...a, ...moved } : a)));
+      // A group class card moves every child in it.
+      const ids = new Set(apt.is_group ? apt.members.map(m => m.id) : [apt.id]);
+      setAppointments(prev => prev.map(a => (ids.has(a.id) ? { ...a, ...moved } : a)));
     }
     try {
       setDropToast(await saveDrop(apt, target));
@@ -281,7 +295,7 @@ export default function WeeklySchedulePage() {
   const grid = useMemo(() => {
     const g = {};
     daysToShow.forEach(d => { g[d.dateStr] = {}; });
-    appointments.forEach(apt => {
+    shown.forEach(apt => {
       // Sessions off the 8-6 grid go under it (they'd land in the last row).
       if (isOffGrid(apt)) return;
       const dayBucket = g[apt.appointment_date];
@@ -297,7 +311,7 @@ export default function WeeklySchedulePage() {
       dayBucket[slot].push(apt);
     });
     return g;
-  }, [daysToShow, appointments]);
+  }, [daysToShow, shown]);
 
   const oooForDaySlot = (dateStr, time) => {
     const slotM = timeToMinutes(time);
@@ -549,12 +563,12 @@ export default function WeeklySchedulePage() {
                 const m = range.start % 60;
                 const timeText = formatSlotLabel(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
                 const message = c.kind === 'closed'
-                  ? `${c.a.patient_name} is scheduled at ${timeText} on a day the office is closed${c.closed.reason && c.closed.reason !== 'Office closed' ? ` (${c.closed.reason})` : ''}`
+                  ? `${conflictName(c.a, c)} is scheduled at ${timeText} on a day the office is closed${c.closed.reason && c.closed.reason !== 'Office closed' ? ` (${c.closed.reason})` : ''}`
                   : c.kind === 'ooo'
-                  ? `${c.a.patient_name} is scheduled at ${timeText} while ${activeProvider} is Out of Office (${c.ooo.type})`
+                  ? `${conflictName(c.a, c)} is scheduled at ${timeText} while ${activeProvider} is Out of Office (${c.ooo.type})`
                   : c.kind === 'contracted-gap'
-                  ? `${c.a.patient_name} is scheduled at ${timeText}, outside ${activeProvider}'s contracted hours`
-                  : `${c.a.patient_name} and ${c.b.patient_name} overlap around ${timeText}`;
+                  ? `${conflictName(c.a, c)} is scheduled at ${timeText}, outside ${activeProvider}'s contracted hours`
+                  : `${conflictName(c.a, c)} and ${conflictName(c.b, c)} overlap around ${timeText}`;
                 return (
                   <div key={idx} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, color: '#9A3412' }}>
                     <span style={{ fontSize: 12.5, fontWeight: 600 }}>{dateLabel}</span>
@@ -567,7 +581,7 @@ export default function WeeklySchedulePage() {
                     </button>
                     {c.kind === 'contracted-gap' && canOkayHours(user, c.a.provider) && (
                       <button
-                        onClick={async () => { try { await setHoursOk(c.a, true); } catch (err) { window.alert(err.message); } refreshAfterOkay(); }}
+                        onClick={async () => { try { await setHoursOkFor(c.group || [c.a], true); } catch (err) { window.alert(err.message); } refreshAfterOkay(); }}
                         title="It's outside the contracted hours on purpose. A repeating session is okayed for every week."
                         style={{ fontSize: 12.5, fontWeight: 600, color: '#9A3412', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
                       >
@@ -605,12 +619,12 @@ export default function WeeklySchedulePage() {
                 const m = range.start % 60;
                 const timeText = formatSlotLabel(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
                 const message = c.kind === 'closed'
-                  ? `${c.a.patient_name} is scheduled at ${timeText} on a day the office is closed${c.closed.reason && c.closed.reason !== 'Office closed' ? ` (${c.closed.reason})` : ''}`
+                  ? `${conflictName(c.a, c)} is scheduled at ${timeText} on a day the office is closed${c.closed.reason && c.closed.reason !== 'Office closed' ? ` (${c.closed.reason})` : ''}`
                   : c.kind === 'ooo'
-                  ? `${c.a.patient_name} is scheduled at ${timeText} while ${activeProvider} is Out of Office (${c.ooo.type})`
+                  ? `${conflictName(c.a, c)} is scheduled at ${timeText} while ${activeProvider} is Out of Office (${c.ooo.type})`
                   : c.kind === 'contracted-gap'
-                  ? `${c.a.patient_name} is scheduled at ${timeText}, outside ${activeProvider}'s contracted hours`
-                  : `${c.a.patient_name} and ${c.b.patient_name} overlap around ${timeText}`;
+                  ? `${conflictName(c.a, c)} is scheduled at ${timeText}, outside ${activeProvider}'s contracted hours`
+                  : `${conflictName(c.a, c)} and ${conflictName(c.b, c)} overlap around ${timeText}`;
                 return (
                   <div key={idx} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, color: '#9A3412' }}>
                     <span style={{ fontSize: 12.5, fontWeight: 600 }}>{dateLabel}</span>
@@ -623,7 +637,7 @@ export default function WeeklySchedulePage() {
                     </button>
                     {c.kind === 'contracted-gap' && canOkayHours(user, c.a.provider) && (
                       <button
-                        onClick={async () => { try { await setHoursOk(c.a, true); } catch (err) { window.alert(err.message); } refreshAfterOkay(); }}
+                        onClick={async () => { try { await setHoursOkFor(c.group || [c.a], true); } catch (err) { window.alert(err.message); } refreshAfterOkay(); }}
                         title="It's outside the contracted hours on purpose. A repeating session is okayed for every week."
                         style={{ fontSize: 12.5, fontWeight: 600, color: '#9A3412', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
                       >
@@ -736,8 +750,8 @@ export default function WeeklySchedulePage() {
                                 stackIndex={stackIndex}
                                 lane={lane}
                                 offsetWithinSlot={offsetWithinSlot}
-                                hasConflict={conflictIds.has(apt.id)}
-                                onClick={() => { setEditingAppointment(apt); setShowModal(true); }}
+                                hasConflict={inConflict(apt, conflictIds)}
+                                onClick={() => openCard(apt)}
                                 dragProps={drag.cardProps(apt)}
                                 dragSource={drag.draggingId === apt.id}
                                 badgeLabel={needsRoom(apt.treatment_area) ? undefined : roomBadgeLabel(apt.treatment_area)}
@@ -745,10 +759,12 @@ export default function WeeklySchedulePage() {
                                 setRoom={needsRoom(apt.treatment_area) && !NO_ROOM_NEEDED.includes(apt.appointment_status)}
                                 badgeIcon={null}
                                 onRoomClick={(e) => {
+                                  if (apt.is_group) { setOpenGroup(apt); return; }
                                   const rect = e.currentTarget.getBoundingClientRect();
                                   setRoomDropdown({ apt, top: rect.bottom + 4, left: rect.left });
                                 }}
                                 onStatusClick={(e) => {
+                                  if (apt.is_group) { setOpenGroup(apt); return; }
                                   const rect = e.currentTarget.getBoundingClientRect();
                                   setStatusDropdown({ apt, top: rect.bottom + 4, left: rect.left });
                                 }}
@@ -772,16 +788,16 @@ export default function WeeklySchedulePage() {
           ))}
           {/* Off the grid (Oct 2026; Oct 15: by time, no tickbox): under each
               weekday, then every session on the weekend. */}
-          {(appointments.some(a => isOffGrid(a) && daysToShow.some(d => d.dateStr === a.appointment_date)) || appointments.some(a => weekendDays.some(d => d.dateStr === a.appointment_date))) && (
+          {(shown.some(a => isOffGrid(a) && daysToShow.some(d => d.dateStr === a.appointment_date)) || shown.some(a => weekendDays.some(d => d.dateStr === a.appointment_date))) && (
             <div style={{ borderTop: '1px solid #eef0f3', background: '#fafbfc' }}>
-              {daysToShow.some(d => appointments.some(a => isOffGrid(a) && a.appointment_date === d.dateStr)) && (
+              {daysToShow.some(d => shown.some(a => isOffGrid(a) && a.appointment_date === d.dateStr)) && (
                 <div style={{ display: 'grid', gridTemplateColumns: `64px repeat(${daysToShow.length}, minmax(0, 1fr))`, alignItems: 'start' }}>
                   <div style={{ padding: '10px 6px', fontSize: 10.5, fontWeight: 700, color: '#6b7280', lineHeight: 1.25 }}>Before 8 / after 6</div>
                   {daysToShow.map(d => (
                     <div key={d.dateStr} style={{ padding: 4, minWidth: 0 }}>
                       <OutsideHoursStrip compact title={null}
-                        appointments={appointments.filter(a => isOffGrid(a) && a.appointment_date === d.dateStr)}
-                        onOpen={(apt) => { setEditingAppointment(apt); setShowModal(true); }} />
+                        appointments={shown.filter(a => isOffGrid(a) && a.appointment_date === d.dateStr)}
+                        onOpen={openCard} />
                     </div>
                   ))}
                 </div>
@@ -790,8 +806,8 @@ export default function WeeklySchedulePage() {
                 <div key={d.dateStr} style={{ padding: '0 8px 8px' }}>
                   <OutsideHoursStrip
                     title={d.date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-                    appointments={appointments.filter(a => a.appointment_date === d.dateStr)}
-                    onOpen={(apt) => { setEditingAppointment(apt); setShowModal(true); }} />
+                    appointments={shown.filter(a => a.appointment_date === d.dateStr)}
+                    onOpen={openCard} />
                 </div>
               ))}
             </div>
@@ -855,6 +871,15 @@ export default function WeeklySchedulePage() {
           onClose={() => { setShowModal(false); setEditingAppointment(null); setPrefill(null); }}
           onSaved={() => { setShowModal(false); setEditingAppointment(null); setPrefill(null); load(); loadLookaheadConflicts(); }}
           onCommentsSynced={load}
+        />
+      )}
+
+      {openGroup && (
+        <GroupClassModal
+          providers={providers.length ? providers : [{ id: 'locked', Name: activeProvider }]}
+          existing={openGroup}
+          onClose={() => { setOpenGroup(null); load({ background: true }); loadLookaheadConflicts(); }}
+          onChanged={() => load({ background: true })}
         />
       )}
 

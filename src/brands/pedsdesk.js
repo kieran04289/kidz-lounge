@@ -18,7 +18,8 @@ export default {
   // (kidz-lounge-api lib/features.js). ei: the EMR for NYC Early
   // Intervention agencies. mandates: Billing's month overview, mandates and
   // needs attention, and the EI child-absence reason. Both PedsDesk only.
-  features: { ei: true, mandates: true },
+  // groupClasses: booking a group class (src/groupClasses.js; both clinics).
+  features: { ei: true, mandates: true, groupClasses: true },
   // The nav bar as four menus (Schedule, Patients, Clinical, Office) with a
   // search box (src/NavBar.jsx, src/NavSearch.jsx); unset = the row of links.
   nav: 'grouped',

@@ -13,13 +13,15 @@ import { api } from './api';
 //   make-up where it's dropped, linked to it like "Schedule make up", and the
 //   original stays put. Not when it already has a make-up, or for the HOLD
 //   placeholder (it isn't a real session; the API refuses that too).
+// - A group class card (src/groupClasses.js) moves the whole class on that
+//   day, every child in it, canceled ones included -- never a make-up.
 
 const MISSED_STATUSES = ['Canceled', 'No Show'];
 // Same check as isHoldPatient (SchedulePage.jsx) by name; kept here so this
 // module doesn't import the page.
 const HOLD_NAME = 'hold - see comments';
 
-export const isMissedAppt = (apt) => MISSED_STATUSES.includes(apt.appointment_status);
+export const isMissedAppt = (apt) => !apt.is_group && MISSED_STATUSES.includes(apt.appointment_status);
 
 export function canDragAppointment(apt) {
   if (!isMissedAppt(apt)) return true;
@@ -81,6 +83,20 @@ export function describeDrop(apt, target) {
 export async function saveDrop(apt, target) {
   const name = apt.patient_name || 'Appointment';
   const where = describeDrop(apt, target);
+
+  if (apt.is_group) {
+    const from = { date: apt.appointment_date, time: String(apt.appointment_time).slice(0, 5), provider: apt.provider, treatment_area: apt.treatment_area || null };
+    const changes = changesFor(apt, target);
+    await api.moveGroupClass(apt.group_class_id, { date: from.date, from_time: from.time, scope: 'one', appointment_date: target.date, appointment_time: target.time, ...changes });
+    return {
+      message: `Moved ${name} to ${where}`,
+      undo: () => api.moveGroupClass(apt.group_class_id, {
+        date: target.date, from_time: target.time, scope: 'one',
+        appointment_date: from.date, appointment_time: from.time, provider: from.provider,
+        ...(changes.treatment_area !== undefined ? { treatment_area: from.treatment_area } : {}),
+      }),
+    };
+  }
 
   if (isMissedAppt(apt)) {
     const created = await api.createAppointment({

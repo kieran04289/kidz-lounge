@@ -33,3 +33,9 @@ export function setHoursOk(apt, ok, note = '') {
     ? api.setSeriesHoursOk(apt.series_id, { ok, note })
     : api.setAppointmentHoursOk(apt.id, { ok, note });
 }
+
+// Okays several sessions together: every child of a group class
+// (src/groupClasses.js), so the class stops being flagged as a whole.
+export function setHoursOkFor(apts, ok, note = '') {
+  return Promise.all(apts.map(a => setHoursOk(a, ok, note)));
+}
