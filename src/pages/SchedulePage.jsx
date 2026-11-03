@@ -5,7 +5,7 @@ import { seriesIdOf } from '../appointmentSetting';
 import { CENTER, SETTINGS, isOffsite, offsiteLocation, offsiteSetting, settingOfArea, roomOfArea, needsRoom, isOffGrid, saveSettingChange, areaAfterStatus, VIRTUAL, holdsRoom } from '../appointmentSetting';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
-import { hoursOkOf, canOkayHours, setHoursOk } from '../hoursOk';
+import { hoursOkOf, canOkayHours, setHoursOk, setHoursOkFor } from '../hoursOk';
 import { choiceStyle } from '../uiTokens';
 import { opensWindowForStatus } from '../eiCancel';
 import { useIsMobile } from '../useIsMobile';
@@ -26,6 +26,8 @@ import { featureOn } from '../brand';
 import { SELF_SERVE_TYPES } from '../timeTypes';
 import { ROOM_OPTIONS, rxApplies } from '../patientOptions';
 import { pollWhileVisible } from '../pageVisibility';
+import { groupClassesOn, collapseGroups, groupStatusText, inConflict, conflictSide, conflictName } from '../groupClasses';
+import { GroupClassModal, BookingKindSwitch } from '../GroupClassModal';
 
 export const TIME_SLOTS = [];
 for (let h = 8; h <= 17; h++) {
@@ -285,6 +287,7 @@ export function getConflictKey(c) {
 // isn't drawn, and flagging both would double-count one appointment.
 export function computeConflicts(appointments, oooRecords, contractedGaps = [], closedDates = []) {
   const list = [];
+  const seenPairs = new Set();
   const closedByDate = Object.fromEntries((closedDates || []).map(c => [c.date, c]));
   // Canceled, No Show and *HOLD* sessions aren't happening (Kieran, Oct
   // 2026: a held slot never conflicts; Nov 2026: nor a no-show whose time
@@ -302,6 +305,9 @@ export function computeConflicts(appointments, oooRecords, contractedGaps = [], 
       const rangeB = getAppointmentTimeRange(b);
       const overlaps = rangeA.start < rangeB.end && rangeB.start < rangeA.end;
       if (!overlaps) continue;
+      // Children in the same group class (src/groupClasses.js) share the
+      // provider and room on purpose.
+      if (a.group_class_id != null && String(a.group_class_id) === String(b.group_class_id)) continue;
 
       const types = [];
       if (a.provider && a.provider === b.provider) types.push('provider');
@@ -311,10 +317,26 @@ export function computeConflicts(appointments, oooRecords, contractedGaps = [], 
       if (a.patient_name && a.patient_name === b.patient_name && !isHoldPatient(a.patient_name)) types.push('patient');
 
       if (types.length > 0) {
+        const pairKey = [conflictSide(a, types), conflictSide(b, types)].sort().join('::') + '::' + types.join(',');
+        if (seenPairs.has(pairKey)) continue;
+        seenPairs.add(pairKey);
         list.push({ kind: 'pair', a, b, types });
       }
     }
   }
+
+  // A class's children share one line for time off, a closure or contracted
+  // hours too; `group` holds them all, so okaying it okays the whole class.
+  const sittingOf = {};
+  nonCanceled.forEach(x => { if (x.group_class_id != null) (sittingOf[conflictSide(x, [])] = sittingOf[conflictSide(x, [])] || []).push(x); });
+  const seenSingles = new Set();
+  const pushSingle = (c, extra) => {
+    const side = conflictSide(c.a, []);
+    const key = `${c.kind}|${side}|${extra}`;
+    if (seenSingles.has(key)) return;
+    seenSingles.add(key);
+    list.push(c.a.group_class_id != null ? { ...c, group: sittingOf[side] || [c.a] } : c);
+  };
 
   nonCanceled.forEach(apt => {
     const range = getAppointmentTimeRange(apt);
@@ -325,7 +347,7 @@ export function computeConflicts(appointments, oooRecords, contractedGaps = [], 
       const oooEnd = timeToMinutes(ooo.end_time.slice(0, 5));
       const overlaps = range.start < oooEnd && oooStart < range.end;
       if (!overlaps) return;
-      list.push({ kind: 'ooo', a: apt, ooo, types: ['ooo'] });
+      pushSingle({ kind: 'ooo', a: apt, ooo, types: ['ooo'] }, ooo.id);
     });
     // An office closure only concerns sessions in the office (Kieran, Oct
     // 20 2026): a room, Center or Virtual. School and Home sessions can run
@@ -333,7 +355,7 @@ export function computeConflicts(appointments, oooRecords, contractedGaps = [], 
     // which the provider can okay as usual. (API: lib/cancelReason.js inOffice.)
     const closed = !isOffsite(apt.treatment_area) ? closedByDate[apt.appointment_date] : null;
     if (closed) {
-      list.push({ kind: 'closed', a: apt, closed, types: ['closed'] });
+      pushSingle({ kind: 'closed', a: apt, closed, types: ['closed'] }, closed.date);
       return;
     }
     // Okayed by the provider or an admin (src/hoursOk.js): outside their
@@ -346,7 +368,7 @@ export function computeConflicts(appointments, oooRecords, contractedGaps = [], 
       const gapEnd = timeToMinutes(gap.end_time.slice(0, 5));
       const overlaps = range.start < gapEnd && gapStart < range.end;
       if (!overlaps) return;
-      list.push({ kind: 'contracted-gap', a: apt, gap, types: ['contracted-gap'] });
+      pushSingle({ kind: 'contracted-gap', a: apt, gap, types: ['contracted-gap'] }, `${gap.date}|${gap.start_time}`);
     });
   });
 
@@ -576,6 +598,7 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
     >
       <div style={{ fontSize: 12, fontWeight: 600, color: '#1f2937', display: 'flex', alignItems: 'center', gap: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: compact ? 1 : 0, minWidth: 0, lineHeight: 1.2, position: 'relative', zIndex: 1 }}>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{apt.patient_name || '(no patient)'}</span>
+        {apt.is_group && <span title="Group class" style={{ color: '#4b5563', fontWeight: 700, fontSize: 9.5, lineHeight: 1, border: '1px solid #9ca3af', borderRadius: 3, padding: '1px 3px', flexShrink: 0 }}>Group</span>}
         {hasComments && <span style={{ color: '#dc2626', fontWeight: 700, fontSize: 13, lineHeight: 1 }}>*</span>}
         {apt.makeup && <span title="Make-up scheduled" style={{ color: MAKEUP_GREEN, fontWeight: 700, fontSize: 9.5, lineHeight: 1, border: `1px solid ${MAKEUP_GREEN}`, borderRadius: 3, padding: '1px 3px', flexShrink: 0 }}>MUS</span>}
         {apt.is_eval && <span title="Evaluation" style={{ color: EVAL_BLUE, fontWeight: 700, fontSize: 9.5, lineHeight: 1, border: `1px solid ${EVAL_BLUE}`, borderRadius: 3, padding: '1px 3px', flexShrink: 0 }}>Eval</span>}
@@ -626,7 +649,7 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
             fontSize: 10, fontWeight: 600, borderRadius: 10, padding: '1px 7px', cursor: onStatusClick ? 'pointer' : 'default',
             background: `color-mix(in srgb, ${color} 16%, white)`, color, whiteSpace: 'nowrap', display: 'inline-block',
           }}>
-          {apt.appointment_status}{apt.appointment_status === 'Canceled' && CANCEL_REASON_SHORT[apt.cancel_reason] ? ` · ${CANCEL_REASON_SHORT[apt.cancel_reason]}` : apt.appointment_status === 'Canceled' && apt.missed_by === 'provider' ? ' · Provider' : ''}
+          {apt.is_group ? groupStatusText(apt) : apt.appointment_status}{apt.is_group ? '' : apt.appointment_status === 'Canceled' && CANCEL_REASON_SHORT[apt.cancel_reason] ? ` · ${CANCEL_REASON_SHORT[apt.cancel_reason]}` : apt.appointment_status === 'Canceled' && apt.missed_by === 'provider' ? ' · Provider' : ''}
         </span>
       </div>
       {alertCount > 0 && (
@@ -1575,6 +1598,8 @@ function ScheduleApp() {
 
   const [showOOOModal, setShowOOOModal] = useState(false);
   const [editingOOO, setEditingOOO] = useState(null);
+  // A group class card (src/groupClasses.js) opens its own window.
+  const [openGroup, setOpenGroup] = useState(null);
 
   const [roomDropdown, setRoomDropdown] = useState(null); // { apt, top, left }
   const [providerDropdown, setProviderDropdown] = useState(null); // { apt, top, left }
@@ -1720,7 +1745,9 @@ function ScheduleApp() {
     if (!isMissedAppt(apt)) {
       const moved = movedFields(apt, target);
       const dayStr = dateToInputValue(selectedDateRef.current);
-      setAppointments(prev => prev.flatMap(a => (a.id !== apt.id ? [a] : moved.appointment_date === dayStr ? [{ ...a, ...moved }] : [])));
+      // A group class card moves every child in it.
+      const ids = new Set(apt.is_group ? apt.members.map(m => m.id) : [apt.id]);
+      setAppointments(prev => prev.flatMap(a => (!ids.has(a.id) ? [a] : moved.appointment_date === dayStr ? [{ ...a, ...moved }] : [])));
     }
     try {
       setDropToast(await saveDrop(apt, target));
@@ -1863,10 +1890,18 @@ function ScheduleApp() {
   // Columns on the daily grid: every active provider, plus an archived one
   // only when they still have a non-canceled appointment that day -- so a
   // leftover booking never silently disappears. Past days work the same way.
+  // What's drawn: each group class sitting as one card (src/groupClasses.js).
+  // Conflicts and the time-off overlay still use every child's own session.
+  const shown = useMemo(() => collapseGroups(appointments), [appointments]);
+  const openCard = (apt) => {
+    if (apt.is_group) { setOpenGroup(apt); return; }
+    setEditingAppointment(apt); setShowModal(true);
+  };
+
   const allGridProviders = useMemo(() => {
-    const extra = archivedProviders.filter(p => appointments.some(a => a.provider === p.Name && a.appointment_status !== 'Canceled'));
+    const extra = archivedProviders.filter(p => shown.some(a => a.provider === p.Name && a.appointment_status !== 'Canceled'));
     return extra.length ? [...providers, ...extra] : providers;
-  }, [providers, archivedProviders, appointments]);
+  }, [providers, archivedProviders, shown]);
 
   const disciplineCounts = useMemo(() => {
     const counts = Object.fromEntries(DISCIPLINES.map(d => [d, 0]));
@@ -1893,7 +1928,7 @@ function ScheduleApp() {
       TIME_SLOTS.forEach(t => { map[p.Name][t] = []; });
     });
 
-    appointments.forEach(apt => {
+    shown.forEach(apt => {
       // Sessions off the 8-6 grid live in the strip under it; on the grid a
       // 7:30 PM visit would land in the last slot (5:30 PM).
       if (isOffGrid(apt)) return;
@@ -1910,7 +1945,7 @@ function ScheduleApp() {
     });
 
     return map;
-  }, [gridProviders, appointments]);
+  }, [gridProviders, shown]);
 
   const roomGrid = useMemo(() => {
     const map = {};
@@ -1919,7 +1954,7 @@ function ScheduleApp() {
       TIME_SLOTS.forEach(t => { map[room][t] = []; });
     });
 
-    appointments.forEach(apt => {
+    shown.forEach(apt => {
       const room = apt.treatment_area;
       if (!room || !map[room]) return;
       const aptMinutes = timeToMinutes(apt.appointment_time.slice(0, 5));
@@ -1933,7 +1968,7 @@ function ScheduleApp() {
     });
 
     return map;
-  }, [appointments]);
+  }, [shown]);
 
   // Start fresh whenever you open the Unassigned view or change the date...
   useEffect(() => { setPinnedUnassignedKeys(new Set()); }, [viewMode, selectedDate]);
@@ -1943,20 +1978,20 @@ function ScheduleApp() {
     if (viewMode !== 'unassigned') return;
     setPinnedUnassignedKeys(prev => {
       let next = prev;
-      appointments.forEach(apt => {
+      shown.forEach(apt => {
         if (!needsRoom(apt.treatment_area) || NO_ROOM_NEEDED.includes(apt.appointment_status) || isHoldPatient(apt.patient_name)) return;
         const key = unassignedPinKey(apt);
         if (!next.has(key)) { if (next === prev) next = new Set(prev); next.add(key); }
       });
       return next;
     });
-  }, [appointments, viewMode]);
+  }, [shown, viewMode]);
 
   const unassignedAppointments = useMemo(() => {
-    return appointments
+    return shown
       .filter(apt => !NO_ROOM_NEEDED.includes(apt.appointment_status) && !isHoldPatient(apt.patient_name) && (needsRoom(apt.treatment_area) || pinnedUnassignedKeys.has(unassignedPinKey(apt))))
       .sort((a, b) => a.appointment_time.localeCompare(b.appointment_time));
-  }, [appointments, pinnedUnassignedKeys]);
+  }, [shown, pinnedUnassignedKeys]);
 
   // Position the blue current-time line from the real row positions, and on
   // first showing today's grid, scroll the page so the line sits about a
@@ -2161,12 +2196,12 @@ function ScheduleApp() {
                 const m = range.start % 60;
                 const timeText = formatSlotLabel(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
                 const message = c.kind === 'closed'
-                  ? `${c.a.patient_name} is scheduled at ${timeText} on a day the office is closed${c.closed.reason && c.closed.reason !== 'Office closed' ? ` (${c.closed.reason})` : ''}`
+                  ? `${conflictName(c.a, c)} is scheduled at ${timeText} on a day the office is closed${c.closed.reason && c.closed.reason !== 'Office closed' ? ` (${c.closed.reason})` : ''}`
                   : c.kind === 'ooo'
-                  ? `${c.a.patient_name} is scheduled at ${timeText} while ${c.a.provider} is Out of Office (${c.ooo.type})`
+                  ? `${conflictName(c.a, c)} is scheduled at ${timeText} while ${c.a.provider} is Out of Office (${c.ooo.type})`
                   : c.kind === 'contracted-gap'
-                  ? `${c.a.patient_name} is scheduled at ${timeText}, outside ${c.a.provider}'s contracted hours`
-                  : `${c.a.patient_name} and ${c.b.patient_name} overlap around ${timeText} (${c.types.map(t => t === 'provider' ? 'same provider' : t === 'room' ? 'same room' : 'same patient').join(', ')})`;
+                  ? `${conflictName(c.a, c)} is scheduled at ${timeText}, outside ${c.a.provider}'s contracted hours`
+                  : `${conflictName(c.a, c)} and ${conflictName(c.b, c)} overlap around ${timeText} (${c.types.map(t => t === 'provider' ? 'same provider' : t === 'room' ? 'same room' : 'same patient').join(', ')})`;
                 return (
                   <div key={idx} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, color: '#9A3412' }}>
                     <span style={{ fontSize: 12.5, fontWeight: 600 }}>{dateLabel}</span>
@@ -2179,7 +2214,7 @@ function ScheduleApp() {
                     </button>
                     {c.kind === 'contracted-gap' && canOkayHours(user, c.a.provider) && (
                       <button
-                        onClick={async () => { try { await setHoursOk(c.a, true); } catch (err) { window.alert(err.message); } loadDayRef.current?.(); loadLookaheadConflicts(); }}
+                        onClick={async () => { try { await setHoursOkFor(c.group || [c.a], true); } catch (err) { window.alert(err.message); } loadDayRef.current?.(); loadLookaheadConflicts(); }}
                         title="It's outside the contracted hours on purpose. A repeating session is okayed for every week."
                         style={{ fontSize: 12.5, fontWeight: 600, color: '#9A3412', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
                       >
@@ -2209,12 +2244,12 @@ function ScheduleApp() {
               const m = range.start % 60;
               const timeText = formatSlotLabel(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
               const message = c.kind === 'closed'
-                  ? `${c.a.patient_name} is scheduled at ${timeText} on a day the office is closed${c.closed.reason && c.closed.reason !== 'Office closed' ? ` (${c.closed.reason})` : ''}`
+                  ? `${conflictName(c.a, c)} is scheduled at ${timeText} on a day the office is closed${c.closed.reason && c.closed.reason !== 'Office closed' ? ` (${c.closed.reason})` : ''}`
                   : c.kind === 'ooo'
-                ? `${c.a.patient_name} is scheduled at ${timeText} while ${c.a.provider} is Out of Office (${c.ooo.type}, ${formatSlotLabel(c.ooo.start_time.slice(0, 5))}–${formatSlotLabel(c.ooo.end_time.slice(0, 5))})`
+                ? `${conflictName(c.a, c)} is scheduled at ${timeText} while ${c.a.provider} is Out of Office (${c.ooo.type}, ${formatSlotLabel(c.ooo.start_time.slice(0, 5))}–${formatSlotLabel(c.ooo.end_time.slice(0, 5))})`
                 : c.kind === 'contracted-gap'
-                ? `${c.a.patient_name} is scheduled at ${timeText}, outside ${c.a.provider}'s contracted hours (not contracted ${formatSlotLabel(c.gap.start_time.slice(0, 5))}–${formatSlotLabel(c.gap.end_time.slice(0, 5))})`
-                : `${c.a.patient_name} and ${c.b.patient_name} overlap around ${timeText} (${c.types.map(t => t === 'provider' ? 'same provider' : t === 'room' ? 'same room' : 'same patient').join(', ')})`;
+                ? `${conflictName(c.a, c)} is scheduled at ${timeText}, outside ${c.a.provider}'s contracted hours (not contracted ${formatSlotLabel(c.gap.start_time.slice(0, 5))}–${formatSlotLabel(c.gap.end_time.slice(0, 5))})`
+                : `${conflictName(c.a, c)} and ${conflictName(c.b, c)} overlap around ${timeText} (${c.types.map(t => t === 'provider' ? 'same provider' : t === 'room' ? 'same room' : 'same patient').join(', ')})`;
               return (
                 <div key={idx} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, color: '#991b1b' }}>
                   <span style={{ fontSize: 13 }}>{message}</span>
@@ -2226,7 +2261,7 @@ function ScheduleApp() {
                   </button>
                   {c.kind === 'contracted-gap' && canOkayHours(user, c.a.provider) && (
                     <button
-                      onClick={async () => { try { await setHoursOk(c.a, true); } catch (err) { window.alert(err.message); } loadDayRef.current?.(); loadLookaheadConflicts(); }}
+                      onClick={async () => { try { await setHoursOkFor(c.group || [c.a], true); } catch (err) { window.alert(err.message); } loadDayRef.current?.(); loadLookaheadConflicts(); }}
                       title="It's outside the contracted hours on purpose. A repeating session is okayed for every week."
                       style={{ fontSize: 12.5, fontWeight: 600, color: '#991b1b', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
                     >
@@ -2375,8 +2410,8 @@ function ScheduleApp() {
                                 stackIndex={stackIndex}
                                 lane={lane}
                                 offsetWithinSlot={offsetWithinSlot}
-                                hasConflict={activeConflicts.ids.has(apt.id)}
-                                onClick={() => { setEditingAppointment(apt); setShowModal(true); }}
+                                hasConflict={inConflict(apt, activeConflicts.ids)}
+                                onClick={() => openCard(apt)}
                                 dragProps={drag.cardProps(apt)}
                                 dragSource={drag.draggingId === apt.id}
                                 badgeLabel={viewMode === 'provider' ? (needsRoom(apt.treatment_area) ? undefined : roomBadgeLabel(apt.treatment_area)) : apt.provider}
@@ -2386,6 +2421,7 @@ function ScheduleApp() {
                                   ? <HouseIcon size={10} color="#9ca3af" strokeWidth={2} />
                                   : <UserIcon size={10} color="#9ca3af" strokeWidth={2} />}
                                 onRoomClick={(e) => {
+                                  if (apt.is_group) { setOpenGroup(apt); return; }
                                   const rect = e.currentTarget.getBoundingClientRect();
                                   if (viewMode === 'provider') {
                                     setRoomDropdown({ apt, top: rect.bottom + 4, left: rect.left });
@@ -2394,6 +2430,7 @@ function ScheduleApp() {
                                   }
                                 }}
                                 onStatusClick={(e) => {
+                                  if (apt.is_group) { setOpenGroup(apt); return; }
                                   const rect = e.currentTarget.getBoundingClientRect();
                                   setStatusDropdown({ apt, top: rect.bottom + 4, left: rect.left });
                                 }}
@@ -2416,8 +2453,8 @@ function ScheduleApp() {
 
       {!loading && !error && (
         <OutsideHoursStrip
-          appointments={appointments.filter(a => isOffGrid(a) && (viewMode !== 'provider' || gridProviders.some(p => p.Name === a.provider)))}
-          onOpen={(apt) => { setEditingAppointment(apt); setShowModal(true); }}
+          appointments={shown.filter(a => isOffGrid(a) && (viewMode !== 'provider' || gridProviders.some(p => p.Name === a.provider)))}
+          onOpen={openCard}
         />
       )}
 
@@ -2435,7 +2472,7 @@ function ScheduleApp() {
             {unassignedAppointments.map(apt => (
               <div
                 key={apt.id}
-                onClick={() => { setEditingAppointment(apt); setShowModal(true); }}
+                onClick={() => openCard(apt)}
                 style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 12px', borderRadius: 8, border: '1px solid #eef0f3', cursor: 'pointer' }}
                 onMouseEnter={e => { e.currentTarget.style.background = '#fafbfc'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'white'; }}
@@ -2450,6 +2487,7 @@ function ScheduleApp() {
                   title={needsRoom(apt.treatment_area) ? 'Set room' : 'Change room'}
                   onClick={(e) => {
                     e.stopPropagation(); // don't open the full appointment editor
+                    if (apt.is_group) { setOpenGroup(apt); return; }
                     const rect = e.currentTarget.getBoundingClientRect();
                     setRoomDropdown({ apt, top: rect.bottom + 4, left: rect.left });
                   }}
@@ -2576,6 +2614,15 @@ function ScheduleApp() {
         />
       )}
 
+      {openGroup && (
+        <GroupClassModal
+          providers={providers}
+          existing={openGroup}
+          onClose={() => { setOpenGroup(null); loadDay(selectedDateRef.current, { background: true }); refreshLookaheadSoon(); }}
+          onChanged={() => loadDay(selectedDateRef.current, { background: true })}
+        />
+      )}
+
       <AppointmentDragLayer drag={drag} />
       <DropToast toast={dropToast} onUndo={undoDrop} onClose={closeDropToast} />
 
@@ -2672,7 +2719,30 @@ function OkayChoice({ kind, selected, onClick }) {
   );
 }
 
-export function AppointmentModal({ providers, existing, defaultDate, prefill, onClose, onSaved, onCommentsSynced }) {
+// New bookings can be a group class instead of one patient (the
+// `groupClasses` feature, src/groupClasses.js): the switch at the patient
+// field opens the group class window with what was filled in so far. Not for
+// make-ups, evals or a booking that already names its patient.
+export function AppointmentModal(props) {
+  const { existing, prefill } = props;
+  const [groupFrom, setGroupFrom] = useState(null); // what was filled in when switching
+  const canGroup = groupClassesOn() && !existing && !prefill?.makeupFor && !prefill?.isEval && !prefill?.patientName;
+  if (canGroup && groupFrom) {
+    return (
+      <GroupClassModal
+        providers={props.providers}
+        defaultDate={props.defaultDate}
+        prefill={groupFrom}
+        onClose={props.onClose}
+        onSaved={props.onSaved}
+        onSwitchToPatient={() => setGroupFrom(null)}
+      />
+    );
+  }
+  return <PatientAppointmentModal {...props} onGroupClass={canGroup ? setGroupFrom : null} />;
+}
+
+function PatientAppointmentModal({ providers, existing, defaultDate, prefill, onClose, onSaved, onCommentsSynced, onGroupClass }) {
   const { user } = useAuth();
   const nameFor = useStaffNames();
   const patientAlertsMap = usePatientAlerts();
@@ -3234,6 +3304,8 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
           appointment_status: pendingEditRecord.appointment_status,
           start_date: pendingEditRecord.appointment_date,
           ...(pendingEditRecord.hours_ok ? { hours_ok: pendingEditRecord.hours_ok } : {}),
+          // A group class child stays in the class (routes/groupClasses.js).
+          ...(existing.group_class_id != null ? { group_class_id: existing.group_class_id } : {}),
         });
       } else {
         const targets = [{ id: existing.id, appointment_date: pendingEditRecord.appointment_date }, ...futureMatches.map(m => ({ id: m.id, appointment_date: m.appointment_date }))];
@@ -3405,6 +3477,9 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
             >
               {patientSearch}
             </div>
+            {existing.group_class_id != null && existing.group_name && (
+              <div style={{ fontSize: 12.5, color: '#4b5563', fontWeight: 600, marginTop: 4 }}>Part of {existing.group_name} (group class)</div>
+            )}
             <div style={{ fontSize: 13, color: BRAND.muted, marginTop: 4 }}>
               {provider} &middot; {appointmentDate ? new Date(appointmentDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '--'} &middot; {formatSlotLabel(appointmentTime)}
             </div>
@@ -3463,6 +3538,12 @@ export function AppointmentModal({ providers, existing, defaultDate, prefill, on
           <>
             {!existing && (
               <>
+                {onGroupClass && (
+                  <BookingKindSwitch
+                    value="patient"
+                    onChange={() => onGroupClass({ provider, date: appointmentDate, time: appointmentTime, duration: Number(duration) === 30 ? 60 : Number(duration), treatmentArea })}
+                  />
+                )}
                 <label style={labelStyle()}>Patient</label>
                 <div style={{ position: 'relative' }}>
                   <input
