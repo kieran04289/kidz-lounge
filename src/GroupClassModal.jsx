@@ -1,28 +1,41 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from './api';
+import { featureOn } from './brand';
+import { choiceStyle } from './uiTokens';
 import { useAuth } from './AuthContext';
 import {
   AppointmentModal, CommentsThread, PatientDetailsPanel, DateField, TimeField, OffsiteSettingButtons, STATUS_OPTIONS, HOLD_STATUS, TREATMENT_AREA_OPTIONS,
   statusColor, formatSlotLabel, makeOffsiteArea, isHoldPatient, dateToInputValue, BRAND, BRAND_SERIF,
 } from './pages/SchedulePage';
-import { CENTER, settingOfArea, roomOfArea, offsiteLocation, areaAfterStatus } from './appointmentSetting';
+import { CENTER, settingOfArea, roomOfArea, offsiteLocation, areaAfterStatus, isOffsite, CANCEL_REASONS, ABSENCE_REASONS } from './appointmentSetting';
 import { collapseGroups, groupStatusText, MIN_CHILDREN, MAX_CHILDREN } from './groupClasses';
-import { opensWindowForStatus } from './eiCancel';
 
 // The group class window (src/groupClasses.js; Kieran, Nov 2026). With no
 // `existing` it books a class: a name, the children, and the session as in
 // the appointment window (provider, setting, date, time, length, repeat).
 // With `existing` (a class card from collapseGroups) it shows that sitting
 // the way the appointment window shows an appointment (GroupClassView): every
-// child with their own status menu, Open (their own appointment window, for
-// notes, why absent and make-ups), remove, add a child, the class's
+// child with their own status menu, remove, add a child, the class's
 // comments, rename and delete. A weekly class asks "Just this one" or "This
 // & all future" for changes to the class.
+//
+// A child's own appointment window is never opened (Kieran, Nov 2026): what
+// it offered is here instead -- the cancellation questions in the child's
+// row (MissedQuestions), Schedule make up and the EI session note. Opening a
+// class child from anywhere else (the chart, a conflict's Review) shows the
+// class window too (GroupClassForSession, used by AppointmentModal).
 //
 // It reloads its own sitting after every change and tells the schedule
 // (`onChanged`), so the card behind it stays in step.
 
 const CLASS_MINUTES = [30, 45, 60, 90, 120];
+const MISSED = ['Canceled', 'No Show'];
+const MAKEUP_GREEN = '#15803D'; // the schedule's make-up colour
+const todayStr = () => dateToInputValue(new Date());
+// EI session note key, the same as the appointment window's (src/SessionNotes.jsx).
+const noteKeyOf = (m) => (m.is_virtual ? `series:${m.series_id}:${String(m.appointment_date).slice(0, 10)}`
+  : m.exception_of_series_id ? `series:${m.exception_of_series_id}:${String(m.exception_occurrence_date).slice(0, 10)}` : `appt:${m.id}`);
 // Read when used, not when this file loads: SchedulePage.jsx imports this
 // file too, so its exports aren't ready yet at that point.
 const childStatuses = () => STATUS_OPTIONS.filter(s => s !== HOLD_STATUS);
@@ -295,7 +308,11 @@ function GroupClassView({ providers, existing, onClose, onChanged }) {
   const [patientTab, setPatientTab] = useState(existing.members[0]?.patient_name || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [openChild, setOpenChild] = useState(null); // { apt, startStatus }
+  // A child set to Canceled / No Show whose questions are being answered:
+  // { member, status, cancelReason, missedBy, familyNotified, absenceReason, ei }.
+  const [missing, setMissing] = useState(null);
+  const [bookingMakeup, setBookingMakeup] = useState(null); // the missed child's session
+  const navigate = useNavigate();
   const [removing, setRemoving] = useState(null); // { member, scope }
   const [adding, setAdding] = useState(null); // { name, scope }
   const [confirmingSave, setConfirmingSave] = useState(false);
@@ -336,16 +353,51 @@ function GroupClassView({ providers, existing, onClose, onChanged }) {
     }
   };
 
+  // The fields a status change saves, as the appointment window sends them:
+  // the room freed on a miss, the offsite cancel reason, and (the "mandates"
+  // feature) who missed it and why. Leaving a miss clears them.
+  const statusFields = (m, status, a = {}) => {
+    const missed = MISSED.includes(status);
+    const fields = { appointment_status: status, treatment_area: areaAfterStatus(status, m.treatment_area), cancel_reason: status === 'Canceled' && isOffsite(m.treatment_area) ? (a.cancelReason || null) : null };
+    if (featureOn('mandates')) {
+      const eiMissed = missed && a.ei && fields.cancel_reason !== 'holiday' && fields.cancel_reason !== 'emergency';
+      const providerCancelled = eiMissed && status === 'Canceled' && a.missedBy === 'provider';
+      fields.absence_reason = eiMissed && !providerCancelled ? (a.absenceReason || null) : null;
+      fields.missed_by = eiMissed ? (status === 'No Show' ? 'family' : (a.missedBy || null)) : null;
+      if (providerCancelled && a.familyNotified) fields.family_notified = true;
+    }
+    return fields;
+  };
+  const saveStatus = (m, fields) => run(() => (m.is_virtual
+    ? api.createRecurringException(m.series_id, {
+      occurrence_date: m.appointment_date, appointment_date: m.appointment_date, patient_name: m.patient_name, provider: m.provider,
+      appointment_time: m.appointment_time, duration: m.duration, ...fields,
+    })
+    : api.updateAppointment(m.id, fields)));
   const setChildStatus = async (m, status) => {
     if (status === m.appointment_status) return;
-    if (await opensWindowForStatus(m, status)) { setOpenChild({ apt: m, startStatus: status }); return; }
-    const fields = { appointment_status: status, treatment_area: areaAfterStatus(status, m.treatment_area) };
-    await run(() => (m.is_virtual
-      ? api.createRecurringException(m.series_id, {
-        occurrence_date: m.appointment_date, appointment_date: m.appointment_date, patient_name: m.patient_name, provider: m.provider,
-        appointment_time: m.appointment_time, duration: m.duration, ...fields,
-      })
-      : api.updateAppointment(m.id, fields)));
+    setMissing(null);
+    if (MISSED.includes(status)) {
+      // Asked first, as in the appointment window: an offsite session's
+      // reason, and for an EI session who cancelled and why.
+      let ei = false;
+      if (featureOn('mandates')) {
+        const r = await api.getBillingProgramOn(m.patient_name, m.provider, String(m.appointment_date).slice(0, 10)).catch(() => null);
+        ei = r?.group === 'EI';
+      }
+      if (ei || (status === 'Canceled' && isOffsite(m.treatment_area))) {
+        setMissing({ member: m, status, cancelReason: '', missedBy: '', familyNotified: false, absenceReason: '', ei });
+        return;
+      }
+    }
+    await saveStatus(m, statusFields(m, status));
+  };
+  const saveMissing = async () => {
+    const { member, status, ei } = missing;
+    const closure = missing.cancelReason === 'holiday' || missing.cancelReason === 'emergency';
+    if (ei && status === 'Canceled' && !closure && !missing.missedBy) { setError(`Choose who cancelled ${member.patient_name}'s EI session: the family or the provider.`); return; }
+    const ok = await saveStatus(member, statusFields(member, status, missing));
+    if (ok) setMissing(null);
   };
 
   const session = item || existing;
@@ -466,7 +518,7 @@ function GroupClassView({ providers, existing, onClose, onChanged }) {
                           <span style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, background: c, flexShrink: 0 }} />
                           <span style={{ color: '#111827', fontSize: 13.5, fontWeight: 600, flex: '1 1 150px' }}>{m.patient_name}</span>
                           <select
-                            value={m.appointment_status}
+                            value={missing?.member.id === m.id ? missing.status : m.appointment_status}
                             disabled={busy}
                             onChange={e => setChildStatus(m, e.target.value)}
                             aria-label={`Status for ${m.patient_name}`}
@@ -474,10 +526,26 @@ function GroupClassView({ providers, existing, onClose, onChanged }) {
                           >
                             {(childStatuses().includes(m.appointment_status) ? childStatuses() : [...childStatuses(), m.appointment_status]).map(st => <option key={st} value={st}>{st}</option>)}
                           </select>
-                          <button type="button" onClick={() => setOpenChild({ apt: m })} style={btn()}>Open</button>
                           <button type="button" onClick={() => setRemoving({ member: m, scope: 'one' })} aria-label={`Remove ${m.patient_name} from the class`} style={{ ...linkBtn, color: '#6b7280', fontSize: 16, lineHeight: 1 }}>×</button>
                         </div>
-                        {m.makeup && <div style={{ fontSize: 11.5, color: BRAND.muted, margin: '3px 0 0 13px' }}>Make-up scheduled</div>}
+                        {missing?.member.id === m.id && (
+                          <MissedQuestions missing={missing} setMissing={setMissing} busy={busy} onSave={saveMissing} onCancel={() => setMissing(null)} />
+                        )}
+                        {(MISSED.includes(m.appointment_status) || (featureOn('ei') && String(m.appointment_date).slice(0, 10) <= todayStr())) && missing?.member.id !== m.id && (
+                          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'baseline', margin: '4px 0 0 13px' }}>
+                            {MISSED.includes(m.appointment_status) && (m.makeup ? (
+                              <span style={{ fontSize: 12, color: MAKEUP_GREEN, fontWeight: 600 }}>
+                                MUS · Make up: {new Date(`${String(m.makeup.appointment_date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} at {formatSlotLabel(hm(m.makeup.appointment_time))} with {m.makeup.provider}
+                              </span>
+                            ) : !m.is_virtual && (
+                              <button type="button" onClick={() => setBookingMakeup(m)} style={{ ...linkBtn, color: MAKEUP_GREEN }}>Schedule make up</button>
+                            ))}
+                            {/* PedsDesk ("ei"): this child's EI session note, from the class's day on. */}
+                            {featureOn('ei') && String(m.appointment_date).slice(0, 10) <= todayStr() && (
+                              <button type="button" onClick={() => navigate(`/session-notes/note?key=${encodeURIComponent(noteKeyOf(m))}`)} style={linkBtn}>Session note (EI)</button>
+                            )}
+                          </div>
+                        )}
                         {removing?.member.id === m.id && (
                           <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca' }}>
                             <p style={{ fontSize: 13, color: '#991b1b', margin: '0 0 8px', fontWeight: 500 }}>
@@ -591,19 +659,96 @@ function GroupClassView({ providers, existing, onClose, onChanged }) {
           )}
         </div>
       </div>
-      {/* Beside the class window, not inside it: a click in the child's
+      {/* Beside the class window, not inside it: a click in the booking
           window must not reach the class window's backdrop. */}
-      {openChild && (
+      {bookingMakeup && (
         <AppointmentModal
           providers={providers}
-          existing={openChild.apt}
+          existing={null}
           defaultDate={new Date(`${where.date}T00:00:00`)}
-          prefill={openChild.startStatus ? { startStatus: openChild.startStatus } : null}
-          onClose={() => setOpenChild(null)}
-          onSaved={() => { setOpenChild(null); reload().catch(() => {}); onChanged?.(); }}
-          onCommentsSynced={() => { reload().catch(() => {}); onChanged?.(); }}
+          prefill={{ patientName: bookingMakeup.patient_name, provider: bookingMakeup.provider, makeupFor: bookingMakeup }}
+          onClose={() => setBookingMakeup(null)}
+          onSaved={() => { setBookingMakeup(null); reload().catch(() => {}); onChanged?.(); }}
         />
       )}
     </>
+  );
+}
+
+// What the appointment window asks when a session is canceled or missed, in
+// the child's row: an offsite cancellation's reason, and for an EI session
+// (the "mandates" feature) who cancelled and why the child was absent.
+function MissedQuestions({ missing, setMissing, busy, onSave, onCancel }) {
+  const set = (k) => (v) => setMissing(x => ({ ...x, [k]: v }));
+  const offsiteCancel = missing.status === 'Canceled' && isOffsite(missing.member.treatment_area);
+  const closure = missing.cancelReason === 'holiday' || missing.cancelReason === 'emergency';
+  const askMissedBy = missing.ei && missing.status === 'Canceled' && !closure;
+  const providerCancelled = askMissedBy && missing.missedBy === 'provider';
+  const askAbsence = missing.ei && !closure && !providerCancelled;
+  const select = { ...input, width: 'auto', minWidth: 200, display: 'inline-block', cursor: 'pointer', marginBottom: 8 };
+  return (
+    <div style={{ margin: '8px 0 0 13px', padding: 10, borderRadius: 8, border: '1px solid #e2e4e9', background: '#fafafa' }}>
+      <p style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: '0 0 8px' }}>{missing.member.patient_name}: {missing.status}</p>
+      {offsiteCancel && (
+        <select value={missing.cancelReason} onChange={e => set('cancelReason')(e.target.value)} aria-label="Cancellation reason (optional)" style={select}>
+          <option value="">Reason (optional)</option>
+          {CANCEL_REASONS.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+        </select>
+      )}
+      {askMissedBy && (
+        <div role="group" aria-label="Who cancelled?" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: '#374151' }}>Who cancelled?</span>
+          {[['family', 'Family'], ['provider', 'Provider']].map(([value, text]) => (
+            <button key={value} type="button" aria-pressed={missing.missedBy === value} onClick={() => set('missedBy')(value)} style={choiceStyle(missing.missedBy === value)}>{text}</button>
+          ))}
+        </div>
+      )}
+      {providerCancelled && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#374151', marginBottom: 8, cursor: 'pointer' }}>
+          <input type="checkbox" checked={missing.familyNotified} onChange={e => set('familyNotified')(e.target.checked)} />
+          The family and service coordinator were told at least 5 business days ahead
+        </label>
+      )}
+      {askAbsence && (
+        <select value={missing.absenceReason} onChange={e => set('absenceReason')(e.target.value)} aria-label="Why was the child absent?" title="EI: a family vacation can't be made up" style={select}>
+          <option value="">Why absent? (EI)</option>
+          {ABSENCE_REASONS.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+        </select>
+      )}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button type="button" onClick={onCancel} disabled={busy} style={btn()}>Keep as it was</button>
+        <button type="button" onClick={onSave} disabled={busy} style={btn('primary')}>{busy ? 'Saving...' : 'Save'}</button>
+      </div>
+    </div>
+  );
+}
+
+// A class child's session opened from anywhere else (the patient chart, a
+// conflict's Review, My time): shows its class window. `session` is the
+// child's own row. Falls back (onMissing) if the class can't be found that
+// day, so the session can still be opened.
+export function GroupClassForSession({ session, providers, onClose, onSaved, onMissing }) {
+  const [item, setItem] = useState(undefined);
+  const changed = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    api.getAppointments(String(session.appointment_date).slice(0, 10))
+      .then(rows => {
+        if (!alive) return;
+        const found = collapseGroups(rows || []).find(a => a.is_group && a.members.some(m => String(m.id) === String(session.id)));
+        setItem(found || null);
+      })
+      .catch(() => { if (alive) setItem(null); });
+    return () => { alive = false; };
+  }, [session.id, session.appointment_date]);
+  useEffect(() => { if (item === null) onMissing?.(); }, [item, onMissing]);
+  if (!item) return null;
+  return (
+    <GroupClassModal
+      providers={providers}
+      existing={item}
+      onChanged={() => { changed.current = true; }}
+      onClose={() => (changed.current ? onSaved() : onClose())}
+    />
   );
 }

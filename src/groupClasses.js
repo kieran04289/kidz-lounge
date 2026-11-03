@@ -1,7 +1,7 @@
 import { featureOn } from './brand';
 
-// Group classes (Kieran, Nov 2026; the `groupClasses` feature, PedsDesk
-// first): one provider with several children at the same time. Each child
+// Group classes (Kieran, Nov 2026; the `groupClasses` feature, both
+// clinics): one provider with several children at the same time. Each child
 // still has their own appointment (kidz-lounge-api routes/groupClasses.js),
 // tied to the class by group_class_id, so billing, notes and make-ups work
 // per child. The schedules show the class as ONE card: collapseGroups turns

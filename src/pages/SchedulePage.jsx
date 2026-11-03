@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useR
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { seriesIdOf } from '../appointmentSetting';
-import { CENTER, SETTINGS, isOffsite, offsiteLocation, offsiteSetting, settingOfArea, roomOfArea, needsRoom, isOffGrid, saveSettingChange, areaAfterStatus, VIRTUAL, holdsRoom } from '../appointmentSetting';
+import { CENTER, SETTINGS, isOffsite, offsiteLocation, offsiteSetting, settingOfArea, roomOfArea, needsRoom, isOffGrid, saveSettingChange, areaAfterStatus, VIRTUAL, holdsRoom, CANCEL_REASONS, ABSENCE_REASONS } from '../appointmentSetting';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import { hoursOkOf, canOkayHours, setHoursOk, setHoursOkFor } from '../hoursOk';
@@ -27,7 +27,7 @@ import { SELF_SERVE_TYPES } from '../timeTypes';
 import { ROOM_OPTIONS, rxApplies } from '../patientOptions';
 import { pollWhileVisible } from '../pageVisibility';
 import { groupClassesOn, collapseGroups, groupStatusText, inConflict, conflictSide, conflictName, GROUP_CARD_STATUS } from '../groupClasses';
-import { GroupClassModal, BookingKindSwitch } from '../GroupClassModal';
+import { GroupClassModal, GroupClassForSession, BookingKindSwitch } from '../GroupClassModal';
 
 export const TIME_SLOTS = [];
 for (let h = 8; h <= 17; h++) {
@@ -159,13 +159,8 @@ export const TREATMENT_AREA_OPTIONS = ROOM_OPTIONS;
 // as offsite, with no setting.
 export const OFFSITE = 'Offsite';
 const OFFSITE_SETTINGS = ['Center', 'School', 'Home'];
-// Why a canceled offsite session didn't happen (optional). Billing shows
-// Holiday as H and Emergency Closure as Z, like an office closure; Other = A.
-// Mirrors kidz-lounge-api lib/cancelReason.js.
-const CANCEL_REASONS = [['holiday', 'Holiday'], ['emergency', 'Emergency Closure'], ['other', 'Other - see comments']];
-// Why a child missed an EI session (the "mandates" feature); mirrors
-// kidz-lounge-api lib/absenceReason.js.
-const ABSENCE_REASONS = [['illness', 'Illness'], ['vacation', 'Family vacation (no make-up)'], ['other', 'Other']];
+// CANCEL_REASONS and ABSENCE_REASONS live in appointmentSetting.js (shared
+// with the group class window).
 // Short form for the small status badge on a card.
 const CANCEL_REASON_SHORT = { holiday: 'Holiday', emergency: 'Emergency', other: 'Other' };
 
@@ -2734,9 +2729,17 @@ function OkayChoice({ kind, selected, onClick }) {
 // `groupClasses` feature, src/groupClasses.js): the switch at the patient
 // field opens the group class window with what was filled in so far. Not for
 // make-ups, evals or a booking that already names its patient.
+// A child's session in a class always opens the class window instead of its
+// own (Kieran, Nov 2026), wherever it's opened from; only if the class can't
+// be found that day does the session's own window show.
 export function AppointmentModal(props) {
   const { existing, prefill } = props;
   const [groupFrom, setGroupFrom] = useState(null); // what was filled in when switching
+  const [classMissing, setClassMissing] = useState(false);
+  const onClassMissing = useCallback(() => setClassMissing(true), []);
+  if (groupClassesOn() && existing?.group_class_id != null && !existing.is_group && !classMissing) {
+    return <GroupClassForSession session={existing} providers={props.providers} onClose={props.onClose} onSaved={props.onSaved} onMissing={onClassMissing} />;
+  }
   const canGroup = groupClassesOn() && !existing && !prefill?.makeupFor && !prefill?.isEval && !prefill?.patientName;
   if (canGroup && groupFrom) {
     return (
