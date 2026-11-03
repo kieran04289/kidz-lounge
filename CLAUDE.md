@@ -10,7 +10,7 @@ The backend is the sibling repo `../kidz-lounge-api`, a single AWS Lambda with P
 
 ## Working with Kieran (how we've been doing things)
 
-- **Shipping (Oct 13 2026): push to `main` = Demo now, Kidz Lounge at 11 PM.**
+- **Shipping (Oct 13 2026): push to `main` = Demo now, Kidz Lounge at 2 AM** (11 PM until Nov 2026).
   - **Push any time.** `main` goes to the **Demo** clinic (PedsDesk, made-up data) right away: the API by `kidz-lounge-api`'s `deploy.yml`, the site by Demo's Vercel project, which builds `main` with `VITE_CLINIC=pedsdesk`. Check it there.
   - **11 PM New York time:** `kidz-lounge-api`'s `release.yml` deploys `main` to Kidz Lounge's Lambda and runs its migrations. At 11:30 PM this repo's `.github/workflows/release.yml` merges `main` into the `production` branch as a new "Release <sha>" commit, and Kidz Lounge's Vercel project (production branch = `production`) deploys it. It's always a new commit because Vercel skips a commit it already built as main's preview (Oct 2026: pushing main's own commit to `production` deployed nothing). The release commit is authored as the released commit's author (Kieran), because Vercel's Hobby plan silently skips commits by anyone else, including `github-actions[bot]`. It stops if the API's release failed. Nothing is waiting when `main` is already contained in `production`.
   - **Urgent fix:** Actions → "Nightly release to Kidz Lounge" → Run workflow, in the API repo first, then this one.
