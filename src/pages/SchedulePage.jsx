@@ -26,7 +26,7 @@ import { featureOn } from '../brand';
 import { SELF_SERVE_TYPES } from '../timeTypes';
 import { ROOM_OPTIONS, rxApplies } from '../patientOptions';
 import { pollWhileVisible } from '../pageVisibility';
-import { groupClassesOn, collapseGroups, groupStatusText, inConflict, conflictSide, conflictName } from '../groupClasses';
+import { groupClassesOn, collapseGroups, groupStatusText, inConflict, conflictSide, conflictName, GROUP_CARD_STATUS } from '../groupClasses';
 import { GroupClassModal, BookingKindSwitch } from '../GroupClassModal';
 
 export const TIME_SLOTS = [];
@@ -502,7 +502,10 @@ const ClockIcon = (p) => <Icon {...p} path={<><circle cx="12" cy="12" r="9" /><p
 // `dragProps` / `dragSource`: drag-and-drop from useAppointmentDrag.js -- the
 // press handler, and whether this is the card being dragged (faded in place).
 export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColor, heightPx, onRoomClick, onStatusClick, stackIndex = 0, hasConflict, offsetWithinSlot = 0, setRoom = false, lane = null, dragProps, dragSource = false }) {
-  const color = statusColor(apt.appointment_status);
+  // A group class card (src/groupClasses.js) is shaded as Confirmed; its
+  // left bar shows each child's status instead (drawn below).
+  const isGroup = !!apt.is_group && lane?.side !== 'right';
+  const color = statusColor(isGroup ? GROUP_CARD_STATUS : apt.appointment_status);
   const isCanceled = apt.appointment_status === 'Canceled';
   const isNoShow = apt.appointment_status === 'No Show';
   const hasComments = apt.comments && apt.comments.trim().length > 0;
@@ -579,10 +582,12 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
         height: heightPx,
         boxSizing: 'border-box',
         zIndex: 5 + (10 - Math.min(stackIndex, 9)),
-        background: (isCanceled || isNoShow) ? `color-mix(in srgb, ${color} 30%, white)` : `color-mix(in srgb, ${color} 10%, white)`,
-        borderLeft: `3px solid ${color}`,
+        background: (isCanceled || isNoShow) && !isGroup ? `color-mix(in srgb, ${color} 30%, white)` : `color-mix(in srgb, ${color} 10%, white)`,
+        borderLeft: isGroup ? 'none' : `3px solid ${color}`,
         borderRadius: 6,
         padding: compact ? '0 8px' : '5px 8px',
+        // After padding, or it would be reset: room for the striped bar.
+        ...(isGroup ? { paddingLeft: 11 } : {}),
         cursor: 'pointer',
         transition: 'box-shadow 0.15s, transform 0.1s',
         boxShadow: hasConflict ? '0 0 0 2px #dc2626, 0 2px 6px rgba(0,0,0,0.08)' : '0 0 0 1px white, 0 1px 3px rgba(0,0,0,0.1)',
@@ -595,7 +600,13 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
       }}
       onMouseEnter={e => { e.currentTarget.style.boxShadow = hasConflict ? '0 0 0 2px #dc2626, 0 3px 10px rgba(0,0,0,0.15)' : '0 0 0 1px white, 0 3px 10px rgba(0,0,0,0.15)'; }}
       onMouseLeave={e => { e.currentTarget.style.boxShadow = hasConflict ? '0 0 0 2px #dc2626, 0 2px 6px rgba(0,0,0,0.08)' : '0 0 0 1px white, 0 1px 3px rgba(0,0,0,0.1)'; }}
+      title={isGroup ? apt.members.map(m => `${m.patient_name}: ${m.appointment_status}`).join('\n') : undefined}
     >
+      {isGroup && (
+        <div aria-hidden="true" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, display: 'flex', flexDirection: 'column' }}>
+          {apt.members.map(m => <div key={m.id} style={{ flex: 1, background: statusColor(m.appointment_status) }} />)}
+        </div>
+      )}
       <div style={{ fontSize: 12, fontWeight: 600, color: '#1f2937', display: 'flex', alignItems: 'center', gap: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: compact ? 1 : 0, minWidth: 0, lineHeight: 1.2, position: 'relative', zIndex: 1 }}>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{apt.patient_name || '(no patient)'}</span>
         {apt.is_group && <span title="Group class" style={{ color: '#4b5563', fontWeight: 700, fontSize: 9.5, lineHeight: 1, border: '1px solid #9ca3af', borderRadius: 3, padding: '1px 3px', flexShrink: 0 }}>Group</span>}
@@ -647,9 +658,9 @@ export function AppointmentCard({ apt, onClick, badgeLabel, badgeIcon, badgeColo
           onClick={onStatusClick ? (e) => { e.stopPropagation(); onStatusClick(e); } : undefined}
           style={{
             fontSize: 10, fontWeight: 600, borderRadius: 10, padding: '1px 7px', cursor: onStatusClick ? 'pointer' : 'default',
-            background: `color-mix(in srgb, ${color} 16%, white)`, color, whiteSpace: 'nowrap', display: 'inline-block',
+            background: `color-mix(in srgb, ${color} 16%, white)`, color, whiteSpace: isGroup ? 'normal' : 'nowrap', display: 'inline-block',
           }}>
-          {apt.is_group ? groupStatusText(apt) : apt.appointment_status}{apt.is_group ? '' : apt.appointment_status === 'Canceled' && CANCEL_REASON_SHORT[apt.cancel_reason] ? ` · ${CANCEL_REASON_SHORT[apt.cancel_reason]}` : apt.appointment_status === 'Canceled' && apt.missed_by === 'provider' ? ' · Provider' : ''}
+          {isGroup ? groupStatusText(apt) : apt.appointment_status}{isGroup ? '' : apt.appointment_status === 'Canceled' && CANCEL_REASON_SHORT[apt.cancel_reason] ? ` · ${CANCEL_REASON_SHORT[apt.cancel_reason]}` : apt.appointment_status === 'Canceled' && apt.missed_by === 'provider' ? ' · Provider' : ''}
         </span>
       </div>
       {alertCount > 0 && (
@@ -681,7 +692,7 @@ function formatDateMMDDYYYY(dateStr) {
   return `${month}.${day}.${year}`;
 }
 
-function PatientDetailsPanel({ patientName }) {
+export function PatientDetailsPanel({ patientName }) {
   const [patient, setPatient] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -1071,7 +1082,7 @@ function formatCommentTimestamp(isoString) {
 // `onAppend(text)` / `onRemove(commentId)`: optional -- post somewhere other
 // than a calendar row (a shared meeting thread). Each returns the updated
 // comments string.
-function CommentsThread({ table, recordId, comments, currentUser, onUpdated, isVirtual, onMaterialize, onAppend, onRemove, label = 'Comments' }) {
+export function CommentsThread({ table, recordId, comments, currentUser, onUpdated, isVirtual, onMaterialize, onAppend, onRemove, label = 'Comments' }) {
   const [newComment, setNewComment] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);

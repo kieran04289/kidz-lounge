@@ -213,6 +213,8 @@ export const api = {
   // body: { date, from_time, scope, and any of appointment_date, appointment_time, duration, provider, treatment_area }
   moveGroupClass: (id, body) => request(`/group-classes/${id}/move`, { method: 'POST', body: JSON.stringify(body) }),
   deleteGroupClass: (id, body) => request(`/group-classes/${id}/delete`, { method: 'POST', body: JSON.stringify(body) }),
+  // One thread per class sitting: { date, action: 'append', text } or { date, action: 'delete', commentId } -> { comments }
+  groupClassComment: (id, body) => request(`/group-classes/${id}/comments`, { method: 'PUT', body: JSON.stringify(body) }),
 
   // ---- Out of Office ----
   getOOO: (date) => request(`/ooo?date=${date}`),

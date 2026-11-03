@@ -33,7 +33,8 @@ export function collapseGroups(appointments) {
     const key = sittingKey(a);
     let item = sittings.get(key);
     if (!item) {
-      item = { ...a, id: `group:${key}`, is_group: true, patient_name: a.group_name || 'Group class', members: [], comments: null, makeup: null, is_makeup: false, is_eval: false };
+      // comments: the class's own thread for the day (the card's red *).
+      item = { ...a, id: `group:${key}`, is_group: true, patient_name: a.group_name || 'Group class', members: [], comments: a.group_comments || null, makeup: null, is_makeup: false, is_eval: false };
       sittings.set(key, item);
       out.push(item);
     }
@@ -58,16 +59,18 @@ export function collapseGroups(appointments) {
   return out;
 }
 
-// "4 children", "3 children · 1 out" for the card.
+// "3 Confirmed · 1 Canceled" (Kieran, Nov 2026): how many children have
+// each status, most first.
 export function groupStatusText(item) {
-  const total = item.members.length;
-  const out = item.members.filter(m => MISSED.includes(m.appointment_status)).length;
-  const here = total - out;
-  const noun = (n) => `${n} ${n === 1 ? 'child' : 'children'}`;
-  if (!out) return noun(total);
-  if (!here) return `All ${total} out`;
-  return `${noun(here)} · ${out} out`;
+  const counts = new Map();
+  item.members.forEach(m => counts.set(m.appointment_status, (counts.get(m.appointment_status) || 0) + 1));
+  return [...counts.entries()].sort((p, q) => q[1] - p[1]).map(([status, n]) => `${n}\u00a0${status}`).join(' · '); // a wrap never splits a count from its status
 }
+
+// The card's look (Kieran, Nov 2026): always shaded as Confirmed, with the
+// left bar split into one equal stripe per child, in the attendee list's
+// order, in that child's status colour.
+export const GROUP_CARD_STATUS = 'Confirmed';
 
 // Is this session (or class card) in a conflict? A class card is when any
 // of its children is.

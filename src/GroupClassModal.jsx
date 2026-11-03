@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { api } from './api';
+import { useAuth } from './AuthContext';
 import {
-  AppointmentModal, DateField, TimeField, OffsiteSettingButtons, STATUS_OPTIONS, HOLD_STATUS, TREATMENT_AREA_OPTIONS,
-  statusColor, formatSlotLabel, roomDisplayText, makeOffsiteArea, isHoldPatient, dateToInputValue, BRAND, BRAND_SERIF,
+  AppointmentModal, CommentsThread, PatientDetailsPanel, DateField, TimeField, OffsiteSettingButtons, STATUS_OPTIONS, HOLD_STATUS, TREATMENT_AREA_OPTIONS,
+  statusColor, formatSlotLabel, makeOffsiteArea, isHoldPatient, dateToInputValue, BRAND, BRAND_SERIF,
 } from './pages/SchedulePage';
 import { CENTER, settingOfArea, roomOfArea, offsiteLocation, areaAfterStatus } from './appointmentSetting';
 import { collapseGroups, groupStatusText, MIN_CHILDREN, MAX_CHILDREN } from './groupClasses';
@@ -12,11 +12,12 @@ import { opensWindowForStatus } from './eiCancel';
 // The group class window (src/groupClasses.js; Kieran, Nov 2026). With no
 // `existing` it books a class: a name, the children, and the session as in
 // the appointment window (provider, setting, date, time, length, repeat).
-// With `existing` (a class card from collapseGroups) it shows that sitting:
-// every child with their own status menu, Open (their own appointment
-// window, for notes, why absent, make-ups and comments), remove, add a
-// child, change the time or place, rename and delete. A weekly class asks
-// "This week only" or "This & all future" for changes to the class.
+// With `existing` (a class card from collapseGroups) it shows that sitting
+// the way the appointment window shows an appointment (GroupClassView): every
+// child with their own status menu, Open (their own appointment window, for
+// notes, why absent and make-ups), remove, add a child, the class's
+// comments, rename and delete. A weekly class asks "Just this one" or "This
+// & all future" for changes to the class.
 //
 // It reloads its own sitting after every change and tells the schedule
 // (`onChanged`), so the card behind it stays in step.
@@ -33,7 +34,6 @@ const overlay = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)',
 const box = { background: 'white', borderRadius: 12, width: '100%', maxWidth: 620, maxHeight: '94vh', overflowY: 'auto', padding: '18px 22px', boxSizing: 'border-box', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' };
 const input = { width: '100%', padding: '9px 11px', borderRadius: 8, border: '1px solid #e2e4e9', fontSize: 13.5, marginBottom: 12, boxSizing: 'border-box', fontFamily: 'inherit' };
 const label = { display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 5, color: '#374151' };
-const sectionTitle = { fontSize: 13, fontWeight: 600, color: '#111827', margin: '4px 0 8px' };
 const panel = { border: '1px solid #e2e4e9', borderRadius: 8, padding: 12, marginBottom: 12 };
 function btn(kind) {
   return {
@@ -83,10 +83,9 @@ function useSetting(initialArea) {
   const touch = (fn) => (v) => { setTouched(true); fn(v); };
   const setSetting = touch(setSettingRaw); const setRoom = touch(setRoomRaw); const setPlace = touch(setPlaceRaw);
   const area = !touched ? (initialArea || '') : setting === 'Center' ? (room || CENTER) : setting ? makeOffsiteArea(place, setting) : '';
-  const fields = (
+  const buttons = <OffsiteSettingButtons value={setting} onChange={setSetting} />;
+  const details = (
     <>
-      <span style={{ ...label }}>Setting</span>
-      <div style={{ marginBottom: 12 }}><OffsiteSettingButtons value={setting} onChange={setSetting} /></div>
       {setting === 'Center' && (
         <div style={{ maxWidth: 260 }}>
           <label htmlFor="kl-group-room" style={label}>Room</label>
@@ -105,7 +104,14 @@ function useSetting(initialArea) {
       )}
     </>
   );
-  return { area, touched, fields };
+  const fields = (
+    <>
+      <span style={{ ...label }}>Setting</span>
+      <div style={{ marginBottom: 12 }}>{buttons}</div>
+      {details}
+    </>
+  );
+  return { area, touched, fields, buttons, details };
 }
 
 // Search for a child to add (the appointment window's patient search).
@@ -272,39 +278,54 @@ function NewGroupClass({ providers, defaultDate, prefill, onClose, onSaved, onSw
   );
 }
 
+// The class window, laid out like the appointment window (Kieran, Nov 2026):
+// Details (the session's provider, setting, date, time and length, saved with
+// Save; the attendees, each with their own status; the class's comments) and
+// Patient Info (a tab per child). Attendee and comment changes save at once,
+// like comments on an appointment.
 function GroupClassView({ providers, existing, onClose, onChanged }) {
-  const navigate = useNavigate();
+  const { user } = useAuth();
   const groupId = existing.group_class_id;
-  // This sitting: the class, day, time and provider (they change on a move).
-  const [where, setWhere] = useState({ date: existing.appointment_date, time: hm(existing.appointment_time), provider: existing.provider });
+  const where = { date: existing.appointment_date, time: hm(existing.appointment_time), provider: existing.provider };
   const [item, setItem] = useState(existing);
   const [weekly, setWeekly] = useState(existing.members.some(m => m.is_virtual || m.exception_of_series_id));
   const [name, setName] = useState(existing.group_name || existing.patient_name);
   const [renaming, setRenaming] = useState(null); // the draft name
+  const [tab, setTab] = useState('details');
+  const [patientTab, setPatientTab] = useState(existing.members[0]?.patient_name || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [openChild, setOpenChild] = useState(null); // { apt, startStatus }
   const [removing, setRemoving] = useState(null); // { member, scope }
   const [adding, setAdding] = useState(null); // { name, scope }
-  const [moving, setMoving] = useState(null); // { date, time, duration, provider, scope }
-  const [deleting, setDeleting] = useState(null); // { scope }
+  const [confirmingSave, setConfirmingSave] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const reload = useCallback(async (at = where) => {
-    const rows = await api.getAppointments(at.date);
-    const found = collapseGroups(rows || []).find(a => a.is_group && String(a.group_class_id) === String(groupId) && hm(a.appointment_time) === at.time && a.provider === at.provider);
+  // The session's fields, as in the appointment window.
+  const [provider, setProvider] = useState(existing.provider);
+  const [date, setDate] = useState(existing.appointment_date);
+  const [time, setTime] = useState(hm(existing.appointment_time));
+  const [duration, setDuration] = useState(String(Number(existing.duration) || 30));
+  const setting = useSetting(existing.treatment_area || '');
+  const changed = provider !== existing.provider || date !== existing.appointment_date || time !== hm(existing.appointment_time)
+    || Number(duration) !== (Number(existing.duration) || 30) || (setting.touched && setting.area !== (existing.treatment_area || ''));
+
+  const reload = useCallback(async () => {
+    const rows = await api.getAppointments(where.date);
+    const found = collapseGroups(rows || []).find(a => a.is_group && String(a.group_class_id) === String(groupId) && hm(a.appointment_time) === where.time && a.provider === where.provider);
     setItem(found || null);
     if (found) setWeekly(found.members.some(m => m.is_virtual || m.exception_of_series_id));
-  }, [groupId, where]);
+  }, [groupId, where.date, where.time, where.provider]);
   useEffect(() => {
     api.getGroupClass(groupId).then(g => { if (g) { setName(g.name); setWeekly(w => w || g.weekly); } }).catch(() => {});
   }, [groupId]);
 
   // Runs a change, then reloads this sitting and the schedule behind it.
-  const run = async (fn, at) => {
+  const run = async (fn) => {
     setBusy(true); setError(null);
     try {
       await fn();
-      await reload(at);
+      await reload();
       onChanged?.();
       setBusy(false);
       return true;
@@ -339,16 +360,41 @@ function GroupClassView({ providers, existing, onClose, onChanged }) {
   })).then(ok => ok && setAdding(null));
   const saveRemove = () => run(() => api.removeGroupClassChild(groupId, { ...sittingBody, patient_name: removing.member.patient_name, scope: removing.scope }))
     .then(ok => ok && setRemoving(null));
-  const saveMove = () => {
-    const next = { date: moving.date, time: moving.time, provider: moving.provider };
-    return run(() => api.moveGroupClass(groupId, {
-      ...sittingBody, scope: weekly ? moving.scope : 'one',
-      appointment_date: moving.date, appointment_time: moving.time, duration: Number(moving.duration), provider: moving.provider,
-      ...(moving.areaTouched ? { treatment_area: moving.area || null } : {}),
-    }), next).then(ok => { if (ok) { setWhere(next); setMoving(null); } });
+
+  // Save: like an appointment's, it closes the window. A weekly class asks
+  // which weeks first.
+  const save = async (scope) => {
+    if (!changed) { onClose(); return; }
+    if (!date || !time || !provider) { setError('Date, time and provider are required.'); return; }
+    if (weekly && !scope) { setConfirmingSave(true); return; }
+    const ok = await run(() => api.moveGroupClass(groupId, {
+      ...sittingBody, scope: scope || 'one',
+      appointment_date: date, appointment_time: time, duration: Number(duration), provider,
+      ...(setting.touched ? { treatment_area: setting.area || null } : {}),
+    }));
+    if (ok) onClose();
+    else setConfirmingSave(false);
   };
-  const saveDelete = () => run(() => api.deleteGroupClass(groupId, { ...sittingBody, scope: weekly ? deleting.scope : 'one' }))
-    .then(ok => { if (ok) onClose(); });
+  const remove = async (scope) => {
+    const ok = await run(() => api.deleteGroupClass(groupId, { ...sittingBody, scope }));
+    if (ok) onClose();
+    else setConfirmingDelete(false);
+  };
+
+  const tabBtn = (value, text, current, onPick) => (
+    <button
+      key={value}
+      type="button"
+      onClick={() => onPick(value)}
+      style={{
+        border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+        background: current === value ? 'white' : 'transparent', color: current === value ? '#111827' : '#6b7280',
+      }}
+    >
+      {text}
+    </button>
+  );
+  const shownPatient = members.some(m => m.patient_name === patientTab) ? patientTab : members[0]?.patient_name;
 
   return (
     <>
@@ -367,114 +413,182 @@ function GroupClassView({ providers, existing, onClose, onChanged }) {
                 <button type="button" onClick={() => setRenaming(name)} style={linkBtn}>Rename</button>
               </div>
             )}
+            <div style={{ fontSize: 12.5, color: '#4b5563', fontWeight: 600, marginTop: 4 }}>Group class{weekly ? ' · Weekly' : ''}</div>
             <div style={{ fontSize: 13, color: BRAND.muted, marginTop: 4 }}>
-              Group class · {session.provider} · {dateLabel(where.date)} · {formatSlotLabel(hm(session.appointment_time))} · {Number(session.duration) || 30} min
-              {session.treatment_area ? ` · ${roomDisplayText(session.treatment_area)}` : ''}{weekly ? ' · Weekly' : ''}
+              {session.provider} &middot; {dateLabel(where.date)} &middot; {formatSlotLabel(hm(session.appointment_time))}
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <p style={sectionTitle}>Attendees</p>
-            {item && <span style={{ fontSize: 12, color: BRAND.muted }}>{groupStatusText(item)}</span>}
+          <div style={{ display: 'inline-flex', gap: 4, background: '#F1F2F4', borderRadius: 8, padding: 3, marginBottom: 12 }}>
+            {tabBtn('details', 'Details', tab, setTab)}
+            {tabBtn('patient', 'Patient Info', tab, setTab)}
           </div>
-          {!item && <p style={{ fontSize: 13, color: BRAND.muted }}>Nobody is in this class on this day any more.</p>}
-          {members.length > 0 && (
-            <div style={{ border: '1px solid #e2e4e9', borderRadius: 8, marginBottom: 12 }}>
-              {members.map((m, i) => {
-                const c = statusColor(m.appointment_status);
-                const isRemoving = removing?.member.id === m.id;
-                return (
-                  <div key={m.id} style={{ borderTop: i ? '1px solid #f1f2f4' : 'none', padding: '8px 10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                      <button type="button" onClick={() => navigate(`/patients/${encodeURIComponent(m.patient_name)}`)}
-                        style={{ ...linkBtn, color: '#111827', fontSize: 13.5, fontWeight: 600, flex: '1 1 160px', textAlign: 'left' }}>
-                        {m.patient_name}
-                      </button>
-                      <select
-                        value={m.appointment_status}
-                        disabled={busy}
-                        onChange={e => setChildStatus(m, e.target.value)}
-                        aria-label={`Status for ${m.patient_name}`}
-                        style={{ padding: '4px 8px', borderRadius: 6, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit', border: `1px solid color-mix(in srgb, ${c} 40%, white)`, background: `color-mix(in srgb, ${c} 12%, white)`, color: c, cursor: 'pointer' }}
-                      >
-                        {(childStatuses().includes(m.appointment_status) ? childStatuses() : [...childStatuses(), m.appointment_status]).map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                      <button type="button" onClick={() => setOpenChild({ apt: m })} style={btn()}>Open</button>
-                      <button type="button" onClick={() => setRemoving({ member: m, scope: 'one' })} aria-label={`Remove ${m.patient_name} from the class`} style={{ ...linkBtn, color: '#6b7280', fontSize: 16, lineHeight: 1 }}>×</button>
-                    </div>
-                    {(m.makeup || (m.comments && String(m.comments).trim())) && (
-                      <div style={{ fontSize: 11.5, color: BRAND.muted, marginTop: 3 }}>
-                        {m.makeup ? 'Make-up scheduled' : ''}{m.makeup && m.comments ? ' · ' : ''}{m.comments && String(m.comments).trim() ? 'Has comments' : ''}
-                      </div>
-                    )}
-                    {isRemoving && (
-                      <div style={{ marginTop: 8, padding: 10, borderRadius: 6, background: '#FCEBEB', border: '1px solid #E9A5A5' }}>
-                        <p style={{ fontSize: 13, color: '#791F1F', margin: '0 0 8px', fontWeight: 500 }}>
-                          Take {m.patient_name} out of the class? Their session is removed, not canceled.
-                        </p>
-                        {childWeekly(m) && <ScopeChoice name={`remove-${m.id}`} value={removing.scope} onChange={(s) => setRemoving(r => ({ ...r, scope: s }))} />}
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                          <button type="button" onClick={() => setRemoving(null)} disabled={busy} style={btn()}>Keep</button>
-                          <button type="button" onClick={saveRemove} disabled={busy} style={btn('dangerSolid')}>{busy ? 'Removing...' : 'Remove'}</button>
+
+          {tab === 'details' && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '0 12px' }}>
+                <div>
+                  <label htmlFor="kl-group-provider" style={label}>Provider *</label>
+                  <select id="kl-group-provider" style={input} value={provider} onChange={e => setProvider(e.target.value)}>
+                    {providers.map(p => <option key={p.id} value={p.Name}>{p.Name}</option>)}
+                    {!providers.some(p => p.Name === provider) && <option value={provider}>{provider} (archived)</option>}
+                  </select>
+                </div>
+                <div>
+                  <span style={{ ...label }}>Setting</span>
+                  {setting.buttons}
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.8fr)', gap: '0 12px' }}>
+                <DateField label="Date *" value={date} onChange={setDate} />
+                <TimeField label="Time *" value={time} onChange={setTime} anyTime />
+                <div>
+                  <label htmlFor="kl-group-minutes" style={label}>Minutes</label>
+                  <select id="kl-group-minutes" style={input} value={duration} onChange={e => setDuration(e.target.value)}>
+                    {(CLASS_MINUTES.includes(Number(duration)) ? CLASS_MINUTES : [...CLASS_MINUTES, Number(duration)]).map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+              </div>
+              {setting.details}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <span style={label}>Attendees</span>
+                {item && <span style={{ fontSize: 12, color: BRAND.muted }}>{groupStatusText(item)}</span>}
+              </div>
+              {!item && <p style={{ fontSize: 13, color: BRAND.muted, marginTop: 0 }}>Nobody is in this class on this day any more.</p>}
+              {members.length > 0 && (
+                <div style={{ border: '1px solid #e2e4e9', borderRadius: 8, marginBottom: 8 }}>
+                  {members.map((m, i) => {
+                    const c = statusColor(m.appointment_status);
+                    return (
+                      <div key={m.id} style={{ borderTop: i ? '1px solid #f1f2f4' : 'none', padding: '8px 10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                          <span style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, background: c, flexShrink: 0 }} />
+                          <span style={{ color: '#111827', fontSize: 13.5, fontWeight: 600, flex: '1 1 150px' }}>{m.patient_name}</span>
+                          <select
+                            value={m.appointment_status}
+                            disabled={busy}
+                            onChange={e => setChildStatus(m, e.target.value)}
+                            aria-label={`Status for ${m.patient_name}`}
+                            style={{ padding: '4px 8px', borderRadius: 6, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit', border: `1px solid color-mix(in srgb, ${c} 40%, white)`, background: `color-mix(in srgb, ${c} 12%, white)`, color: c, cursor: 'pointer' }}
+                          >
+                            {(childStatuses().includes(m.appointment_status) ? childStatuses() : [...childStatuses(), m.appointment_status]).map(st => <option key={st} value={st}>{st}</option>)}
+                          </select>
+                          <button type="button" onClick={() => setOpenChild({ apt: m })} style={btn()}>Open</button>
+                          <button type="button" onClick={() => setRemoving({ member: m, scope: 'one' })} aria-label={`Remove ${m.patient_name} from the class`} style={{ ...linkBtn, color: '#6b7280', fontSize: 16, lineHeight: 1 }}>×</button>
                         </div>
+                        {m.makeup && <div style={{ fontSize: 11.5, color: BRAND.muted, margin: '3px 0 0 13px' }}>Make-up scheduled</div>}
+                        {removing?.member.id === m.id && (
+                          <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca' }}>
+                            <p style={{ fontSize: 13, color: '#991b1b', margin: '0 0 8px', fontWeight: 500 }}>
+                              Take {m.patient_name} out of the class? Their session is removed, not canceled.
+                            </p>
+                            {childWeekly(m) && <ScopeChoice name={`remove-${m.id}`} value={removing.scope} onChange={(sc) => setRemoving(r => ({ ...r, scope: sc }))} />}
+                            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                              <button type="button" onClick={() => setRemoving(null)} disabled={busy} style={btn()}>Keep</button>
+                              <button type="button" onClick={saveRemove} disabled={busy} style={btn('dangerSolid')}>{busy ? 'Removing...' : 'Remove'}</button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    );
+                  })}
+                </div>
+              )}
+              {item && (adding ? (
+                <div style={panel}>
+                  {adding.name ? (
+                    <p style={{ fontSize: 13.5, margin: '0 0 10px' }}>
+                      Add <strong>{adding.name}</strong>{' '}
+                      <button type="button" onClick={() => setAdding(a => ({ ...a, name: '' }))} style={linkBtn}>Change</button>
+                    </p>
+                  ) : (
+                    <ChildSearch exclude={members.map(m => m.patient_name)} disabled={members.length >= MAX_CHILDREN} onPick={(n) => setAdding(a => ({ ...a, name: n }))} />
+                  )}
+                  {weekly && <ScopeChoice name="add-scope" value={adding.scope} onChange={(sc) => setAdding(a => ({ ...a, scope: sc }))} />}
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button type="button" onClick={() => setAdding(null)} disabled={busy} style={btn()}>Cancel</button>
+                    <button type="button" onClick={saveAdd} disabled={busy || !adding.name} style={btn('primary')}>{busy ? 'Adding...' : 'Add'}</button>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              ) : members.length < MAX_CHILDREN && (
+                <button type="button" onClick={() => setAdding({ name: '', scope: 'future' })} style={{ ...linkBtn, marginBottom: 14 }}>+ Add a child</button>
+              ))}
+
+              {item && (
+                <CommentsThread
+                  comments={item.comments || ''}
+                  currentUser={user}
+                  onAppend={async (text) => (await api.groupClassComment(groupId, { date: where.date, action: 'append', text })).comments}
+                  onRemove={async (commentId) => (await api.groupClassComment(groupId, { date: where.date, action: 'delete', commentId })).comments}
+                  onUpdated={(comments) => { setItem(it => (it ? { ...it, comments } : it)); onChanged?.(); }}
+                  label={weekly ? 'Comments (this week)' : 'Comments'}
+                />
+              )}
+            </>
           )}
 
-          {item && (adding ? (
-            <div style={panel}>
-              <p style={{ ...sectionTitle, marginTop: 0 }}>Add a child</p>
-              {adding.name ? (
-                <p style={{ fontSize: 13.5, margin: '0 0 10px' }}>
-                  <strong>{adding.name}</strong>{' '}
-                  <button type="button" onClick={() => setAdding(a => ({ ...a, name: '' }))} style={linkBtn}>Change</button>
-                </p>
-              ) : (
-                <ChildSearch exclude={members.map(m => m.patient_name)} disabled={members.length >= MAX_CHILDREN} onPick={(n) => setAdding(a => ({ ...a, name: n }))} />
-              )}
-              {weekly && <ScopeChoice name="add-scope" value={adding.scope} onChange={(s) => setAdding(a => ({ ...a, scope: s }))} />}
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setAdding(null)} disabled={busy} style={btn()}>Cancel</button>
-                <button type="button" onClick={saveAdd} disabled={busy || !adding.name} style={btn('primary')}>{busy ? 'Adding...' : 'Add'}</button>
-              </div>
-            </div>
-          ) : members.length < MAX_CHILDREN && !moving && !deleting && (
-            <button type="button" onClick={() => setAdding({ name: '', scope: 'future' })} style={{ ...linkBtn, marginBottom: 14 }}>+ Add a child</button>
-          ))}
-
-          {moving && <MoveFields providers={providers} moving={moving} setMoving={setMoving} weekly={weekly} busy={busy} onCancel={() => setMoving(null)} onSave={saveMove} />}
-
-          {deleting && (
-            <div style={{ marginBottom: 12, padding: 12, borderRadius: 6, background: '#FCEBEB', border: '1px solid #E9A5A5' }}>
-              <p style={{ fontSize: 13, color: '#791F1F', margin: '0 0 8px', fontWeight: 500 }}>
-                Delete this class? Every child's session is removed. To mark it as not happening, set each child to Canceled instead.
-              </p>
-              {weekly && <ScopeChoice name="delete-scope" value={deleting.scope} onChange={(s) => setDeleting({ scope: s })} />}
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setDeleting(null)} disabled={busy} style={btn()}>Keep</button>
-                <button type="button" onClick={saveDelete} disabled={busy} style={btn('dangerSolid')}>{busy ? 'Deleting...' : 'Delete'}</button>
-              </div>
-            </div>
+          {tab === 'patient' && (
+            members.length === 0 ? <p style={{ fontSize: 13, color: BRAND.muted }}>Nobody is in this class on this day any more.</p> : (
+              <>
+                <div role="tablist" aria-label="Children" style={{ display: 'flex', gap: 2, flexWrap: 'wrap', borderBottom: '1px solid #e2e4e9', marginBottom: 12 }}>
+                  {members.map(m => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={shownPatient === m.patient_name}
+                      onClick={() => setPatientTab(m.patient_name)}
+                      style={{
+                        border: 'none', background: 'none', padding: '6px 10px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginBottom: -1,
+                        color: shownPatient === m.patient_name ? 'var(--brand-primary)' : '#6b7280',
+                        borderBottom: `2px solid ${shownPatient === m.patient_name ? 'var(--brand-primary)' : 'transparent'}`,
+                      }}
+                    >
+                      {m.patient_name}
+                    </button>
+                  ))}
+                </div>
+                {shownPatient && <PatientDetailsPanel key={shownPatient} patientName={shownPatient} />}
+              </>
+            )
           )}
 
           {error && <p style={{ color: '#dc2626', fontSize: 13 }}>{error}</p>}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-            <div>
-              {item && !deleting && !moving && <button type="button" onClick={() => setDeleting({ scope: 'one' })} style={btn('danger')}>Delete class</button>}
+
+          {confirmingSave ? (
+            <div style={{ marginTop: 16, padding: 12, borderRadius: 3, background: BRAND.tint, border: `1.5px solid ${BRAND.box}` }}>
+              <p style={{ fontSize: 13, color: 'var(--brand-ink)', margin: '0 0 10px 0', fontWeight: 500 }}>
+                This is a weekly class. Apply this change to just this week, or to this and all future weeks? Every child in the class moves.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <button type="button" onClick={() => save('one')} disabled={busy} style={btn()}>{busy ? 'Saving...' : 'Just This One'}</button>
+                <button type="button" onClick={() => save('future')} disabled={busy} style={btn('primary')}>{busy ? 'Saving...' : 'This & All Future'}</button>
+                <button type="button" onClick={() => setConfirmingSave(false)} disabled={busy} style={btn()}>Cancel</button>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" onClick={onClose} style={btn()}>Close</button>
-              {item && !moving && !deleting && (
-                <button type="button" onClick={() => setMoving({ date: where.date, time: where.time, duration: String(Number(session.duration) || 30), provider: session.provider, area: session.treatment_area || '', areaTouched: false, scope: 'one' })} style={btn('primary')}>
-                  Change time or place
-                </button>
-              )}
+          ) : confirmingDelete ? (
+            <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca' }}>
+              <p style={{ fontSize: 13, color: '#991b1b', margin: '0 0 10px 0', fontWeight: 500 }}>
+                {weekly
+                  ? 'This is a weekly class. Delete just this week, or this and all future weeks? This removes every child\'s session from the schedule. To keep a record that the class didn\'t happen, set the children to Canceled instead.'
+                  : 'Delete this class? Every child\'s session is removed. This can\'t be undone.'}
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <button type="button" onClick={() => remove('one')} disabled={busy} style={btn('dangerSolid')}>{busy ? 'Deleting...' : 'Delete This Only'}</button>
+                {weekly && <button type="button" onClick={() => remove('future')} disabled={busy} style={btn('dangerSolid')}>{busy ? 'Deleting...' : 'Delete This & All Future'}</button>}
+                <button type="button" onClick={() => setConfirmingDelete(false)} disabled={busy} style={btn()}>Cancel</button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
+              {item ? <button type="button" onClick={() => setConfirmingDelete(true)} disabled={busy} style={btn('danger')}>Delete</button> : <div />}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" onClick={onClose} style={btn()}>Cancel</button>
+                <button type="button" onClick={() => save()} disabled={busy || !item} style={btn('primary')}>{busy ? 'Saving...' : 'Save'}</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       {/* Beside the class window, not inside it: a click in the child's
@@ -491,42 +605,5 @@ function GroupClassView({ providers, existing, onClose, onChanged }) {
         />
       )}
     </>
-  );
-}
-
-// "Change time or place": the class's day, time, length, provider and
-// setting, for this week or from this week on.
-function MoveFields({ providers, moving, setMoving, weekly, busy, onCancel, onSave }) {
-  const setting = useSetting(moving.area);
-  useEffect(() => {
-    if (setting.touched && setting.area !== moving.area) setMoving(m => ({ ...m, area: setting.area, areaTouched: true }));
-  }, [setting.touched, setting.area, moving.area, setMoving]);
-  const set = (k) => (v) => setMoving(m => ({ ...m, [k]: v }));
-  return (
-    <div style={panel}>
-      <p style={{ ...sectionTitle, marginTop: 0 }}>Change time or place</p>
-      <label htmlFor="kl-group-move-provider" style={label}>Provider</label>
-      <select id="kl-group-move-provider" style={input} value={moving.provider} onChange={e => set('provider')(e.target.value)}>
-        {providers.map(p => <option key={p.id} value={p.Name}>{p.Name}</option>)}
-        {!providers.some(p => p.Name === moving.provider) && <option value={moving.provider}>{moving.provider}</option>}
-      </select>
-      {setting.fields}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.8fr)', gap: '0 12px' }}>
-        <DateField label="Date" value={moving.date} onChange={set('date')} />
-        <TimeField label="Time" value={moving.time} onChange={set('time')} anyTime />
-        <div>
-          <label htmlFor="kl-group-move-minutes" style={label}>Minutes</label>
-          <select id="kl-group-move-minutes" style={input} value={moving.duration} onChange={e => set('duration')(e.target.value)}>
-            {(CLASS_MINUTES.includes(Number(moving.duration)) ? CLASS_MINUTES : [...CLASS_MINUTES, Number(moving.duration)]).map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
-        </div>
-      </div>
-      {weekly && <ScopeChoice name="move-scope" value={moving.scope} onChange={set('scope')} />}
-      <p style={{ fontSize: 12, color: BRAND.muted, margin: '0 0 10px' }}>Every child in the class moves, canceled ones included.</p>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <button type="button" onClick={onCancel} disabled={busy} style={btn()}>Cancel</button>
-        <button type="button" onClick={onSave} disabled={busy} style={btn('primary')}>{busy ? 'Saving...' : 'Save'}</button>
-      </div>
-    </div>
   );
 }
