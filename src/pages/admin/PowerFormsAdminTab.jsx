@@ -3,6 +3,8 @@ import { api } from '../../api';
 import { useStaffNames } from '../../staffDirectory';
 import { PowerFormInputs, PowerFormField, PowerFormLetterhead, PatientLabel } from '../../PowerFormFields';
 import { startingAnswers } from '../../powerForms';
+import NycConsentForm from '../../NycConsentForm';
+import { isNycConsent } from '../../nycConsent';
 import { Tag } from '../../dashboardUi';
 import { INK, MUTED, SUBTLE, HAIRLINE, PAGE_BG, ACCENT, TONES, NUMERIC, buttonStyle, choiceStyle } from '../../uiTokens';
 
@@ -295,6 +297,12 @@ function TemplateEditor({ template, setup, onDone, onCancel }) {
   const leave = () => { if (dirty && !leaving) setLeaving(true); else onCancel(); };
 
   const dropAt = (i) => { if (dragFrom !== null) moveTo(dragFrom, i); setDragFrom(null); setDragOver(null); };
+  // NYC's consent form (src/nycConsent.js): its questions are NYC's and fixed
+  // (the API keeps them); the office only sets the starting answers, on the
+  // page itself.
+  const nyc = isNycConsent(fields);
+  const setStarting = (id, v) => setFields(list => list.map(f => (f.id !== id ? f
+    : { ...f, default: v === '' || v === null || (Array.isArray(v) && !v.length) ? undefined : v })));
 
   return (
     <div style={{ display: 'grid', gap: 12, maxWidth: 780 }}>
@@ -316,7 +324,32 @@ function TemplateEditor({ template, setup, onDone, onCancel }) {
       )}
       {error && <p role="alert" style={{ margin: 0, padding: '10px 14px', borderRadius: 8, background: TONES.danger.bg, color: TONES.danger.fg, fontSize: 13.5 }}>{error}</p>}
 
-      {preview ? (
+      {preview && nyc ? (
+        <div style={{ background: PAGE_BG, borderRadius: 8, padding: '20px 16px' }}>
+          <div style={{ maxWidth: 680, margin: '0 auto' }}>
+            <div style={{ ...card, padding: '22px 20px' }}>
+              <NycConsentForm fields={fields} values={previewValues} onChange={(id, v) => setPreviewValues(x => ({ ...x, [id]: v }))} />
+              <div style={{ marginTop: 22, paddingTop: 16, borderTop: `1px solid ${HAIRLINE}` }}>
+                <button type="button" disabled style={buttonStyle('primary', { padding: '10px 18px', fontSize: 15 })}>Submit</button>
+              </div>
+            </div>
+            <p style={{ fontSize: 12.5, color: MUTED, margin: '10px 0 0' }}>This is a preview. Answers here aren't saved.</p>
+          </div>
+        </div>
+      ) : nyc ? (
+        <>
+          <div style={card}>
+            <input aria-label="Form name" value={name} placeholder="Form name" onChange={e => setName(e.target.value)}
+              style={{ ...input, border: 'none', borderBottom: `1px solid ${HAIRLINE}`, borderRadius: 0, padding: '6px 2px', fontSize: 22, fontWeight: 600 }} />
+            <p style={{ margin: '10px 0 0', fontSize: 13.5, color: MUTED, lineHeight: 1.5 }}>
+              This is NYC's own form, so its wording can't be changed. Fill in what the office pre-fills below (the parent can change it). Lines in [brackets] fill in from the child's chart.
+            </p>
+          </div>
+          <div style={{ ...card, padding: '22px 20px' }}>
+            <NycConsentForm office prefillLabels={setup.prefill || {}} fields={fields} values={Object.fromEntries(fields.filter(f => f.default !== undefined).map(f => [f.id, f.default]))} onChange={setStarting} />
+          </div>
+        </>
+      ) : preview ? (
         <div style={{ background: PAGE_BG, borderRadius: 8, padding: '20px 16px' }}>
           <div style={{ maxWidth: 680, margin: '0 auto' }}>
             <div style={{ ...card, padding: '22px 20px' }}>

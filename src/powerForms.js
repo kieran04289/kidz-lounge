@@ -1,6 +1,7 @@
 import { INK } from './uiTokens';
 import { loadPdfMake } from './manualPdf';
 import { CLINIC, featureOn } from './brand';
+import { isNycConsent } from './nycConsent';
 
 // Helpers for Power Forms (PowerFormFields.jsx, PowerFormPage.jsx,
 // PowerFormsChartTab.jsx): the fields' input look, an answer as text, and
@@ -62,6 +63,12 @@ export function patientLabelId(p) {
 }
 
 export async function buildPowerFormPdf(form, patient) {
+  // NYC's consent prints as NYC's own page 1 (src/nycConsent.js), like the
+  // EI session notes: NYC's header, no letterhead or patient label.
+  if (isNycConsent(form.fields)) {
+    const { buildEiPdf, nycConsentSection } = await import('./eiFormsPdf');
+    return buildEiPdf([nycConsentSection(form)], { title: `${form.form_name || 'Consent to Release/Obtain Information'} - ${patient.Name || ''}` });
+  }
   const labelId = patientLabelId({ program: patient.Program, id_number: patient.ID_Number, mrn: patient.mrn });
   const dob = patient.Date_of_Birth ? String(patient.Date_of_Birth).slice(0, 10) : '';
   const [pdfMake, logo] = await Promise.all([loadPdfMake(), logoDataUrl()]);

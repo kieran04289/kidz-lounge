@@ -547,6 +547,80 @@ export function evalReportSection({ eval: e, header, report, addenda, domain_lab
   return { footer: mde ? FORM_VERSIONS.mde : `${CLINIC.name} · Evaluation report`, content };
 }
 
+// ---------- NYC Consent to Release/Obtain Information (form 8/24) ----------
+// A completed Power Form with the NYC consent's questions (src/nycConsent.js),
+// printed as NYC's page 1 (Kieran, Nov 2026): the same wording, order and
+// boxes, the answers on the lines, the drawn signature on "Signed:". Both
+// clinics (Power Forms, not the "ei" feature). `form`: { fields, answers }.
+export function nycConsentSection(form) {
+  const a = form.answers || {};
+  const opts = (id) => (form.fields || []).find(f => f.id === id)?.options || [];
+  const has = (id, o) => !!o && (Array.isArray(a[id]) ? a[id].includes(o) : a[id] === o);
+  const val = (id) => (a[id] === undefined || a[id] === null ? '' : String(a[id]));
+  // "Label: value" with the value underlined, on NYC's lines.
+  const u = (lbl, text, width = 'auto') => ({ width, text: [lbl ? { text: `${lbl} ` } : '', { ...v(text || '                    '), decoration: 'underline' }] });
+  const row = (parts, margin = [0, 2, 0, 2]) => ({ columns: parts, columnGap: 10, margin });
+  const ck = (on, text, italics) => ({ columns: [{ ...box(on, 9), margin: [0, 2, 0, 0] }, { text, italics: !!italics, width: 'auto' }], columnGap: 3, width: 'auto' });
+  const caption = (t) => ({ text: t, fontSize: 8.5, margin: [0, 1, 0, 0] });
+  // A written-on line: the answer underlined, or (left empty) a drawn line
+  // the full width, as on the paper.
+  const fill = (text, width) => (text
+    ? { ...v(text), decoration: 'underline' }
+    : { canvas: [{ type: 'line', x1: 0, y1: 11, x2: width, y2: 11, lineWidth: 0.6 }] });
+  // A box and its label at a fixed width, so a row lays out like the paper.
+  const ckw = (on, text, width, italics = true) => ({ ...ck(on, text, italics), width });
+  const party = (prefix, title) => [
+    { text: title, bold: true, margin: [0, 4, 0, 1] },
+    {
+      table: { widths: ['*'], body: [[{
+        stack: [
+          { columns: [{ stack: [fill(val(`${prefix}_name`), 240), caption('(Name/ Organization)')], width: '*' }, { stack: [fill(val(`${prefix}_address`), 240), caption('(Street Address, Borough/City, Zip Code)')], width: '*' }], columnGap: 14 },
+          { columns: [{ stack: [u('', val(`${prefix}_phone`) || '(____)________________'), caption('     (Telephone Number)')], width: 150 }, { stack: [u('', val(`${prefix}_fax`) || '(____)________________'), caption('     (Fax Number)')], width: 150 }], columnGap: 14, margin: [0, 6, 0, 0] },
+        ],
+        margin: [2, 4, 2, 2],
+      }]] },
+      layout: { hLineWidth: () => 0.9, vLineWidth: () => 0.9 },
+    },
+  ];
+  const [released, obtained] = opts('rel_direction');
+  const info = opts('rel_info');
+  const abc = opts('rel_abc');
+  const purpose = opts('rel_purpose');
+  const sig = a.rel_signature || {};
+  return {
+    footer: 'Consent to Release/Obtain Information Form 8/24',
+    content: [
+      { columns: [{ image: NYC_HEALTH_LOGO, width: 72 }, { text: 'NYC EARLY INTERVENTION PROGRAM\nCONSENT TO RELEASE/OBTAIN INFORMATION', bold: true, fontSize: 12, alignment: 'center', margin: [0, 12, 72, 0] }], margin: [0, 0, 0, 10] },
+      { fontSize: 11, stack: [
+        row([u('Child’s Name:', val('rel_child'), '*'), u('EI #:', val('rel_ei'), 130), u('DOB:', mdy(val('rel_dob')), 110)]),
+        row([u('Address:', val('rel_address'), '*'), u('Apt #:', val('rel_apt'), 150)]),
+        row([u('City/Borough:', val('rel_city'), '*'), u('State:', val('rel_state') || 'New York', 110), u('Zip Code:', val('rel_zip'), 130)]),
+        { text: [{ text: 'I, (Parent/Guardian’s Full Name) ' }, { ...v(val('rel_parent') || '                                        '), decoration: 'underline' }, ', seek services for my child from the NYC Early Intervention Program. I understand that the providers (including evaluators, service providers and service coordinators) offering Early Intervention (EI) services to my child and family may need to exchange information to develop and carry out the Individualized Family Service Plan (IFSP).'], margin: [0, 8, 0, 4] },
+        { text: '(Check ONLY one)', bold: true, italics: true, fontSize: 9, margin: [0, 2, 0, 2] },
+        { columns: [{ columns: [{ ...box(has('rel_direction', released), 14) }, { text: 'I authorize for the information below to be released', width: 'auto', margin: [0, 2, 0, 0] }], columnGap: 3, width: 'auto' }, { columns: [{ ...box(has('rel_direction', obtained), 14) }, { text: 'I authorize for the information below to be obtained', width: 'auto', margin: [0, 2, 0, 0] }], columnGap: 3, width: 'auto' }], columnGap: 14 },
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 548, y2: 0, lineWidth: 1.6 }], margin: [0, 3, 0, 2] },
+        { text: 'Specific information to be released/obtained:', bold: true },
+        { columns: [ckw(has('rel_info', info[0]), 'EI Medical Form', 88), ckw(has('rel_info', info[1]), 'Multidisciplinary Evaluation', 145), ckw(has('rel_info', info[2]), 'Supplemental Evaluation(s) Specify:', 175), { ...fill(val('rel_supplemental'), 118), width: '*' }], columnGap: 4, margin: [0, 2, 0, 3] },
+        { columns: [{ canvas: [{ type: 'line', x1: 0, y1: 11, x2: 205, y2: 11, lineWidth: 0.6 }], width: '*' }, ckw(has('rel_info', info[3]), 'Individualized Family Service Plan', 172), ckw(has('rel_info', info[4]), 'Provider Progress Notes', 125)], columnGap: 6, margin: [0, 1, 0, 3] },
+        { columns: [ckw(has('rel_info', info[5]), 'Session Notes', 84), ckw(has('rel_info', info[6]), 'Other:', 40), { ...fill(val('rel_info_other'), 400), width: '*' }], columnGap: 4, margin: [0, 1, 0, 2] },
+        { text: ['I authorize for the information to be (', { text: 'check/complete either A , B, or C):', bold: true }], margin: [0, 2, 0, 1] },
+        { columns: [{ text: 'A.', bold: true, width: 'auto' }, ck(has('rel_abc', abc[0]), 'Released to all EI providers providing evaluation, service coordination, or services to my child and family')], columnGap: 4 },
+        ...party('rel_b', 'B. Released to the Individual/Agency below:'),
+        ...party('rel_c', 'C. Obtained from the Individual/Agency below:'),
+        ...party('rel_to', '   The information will be sent to:'),
+        { text: 'D. The purpose of the requested information is to: (check all that apply)', bold: true, margin: [0, 6, 0, 1] },
+        ...purpose.slice(0, 4).map(o => ck(has('rel_purpose', o), o)),
+        { columns: [ckw(has('rel_purpose', purpose[4]), 'Other:', 40, false), { ...fill(val('rel_purpose_other'), 470), width: '*' }], columnGap: 4, margin: [0, 0, 0, 6] },
+        { text: 'I understand that this release can be withdrawn at any time upon written notice to my Service Coordinator.', margin: [0, 8, 0, 0] },
+        { text: ['This release ends on the date of my next scheduled IFSP (or, if sooner, specify date ', { ...v(mdy(val('rel_ends')) || '_______________'), decoration: val('rel_ends') ? 'underline' : undefined }, ').'] },
+        { columns: [{ text: 'Signed:', width: 'auto', margin: [0, 14, 4, 0] }, { ...sigImage(sig.image, 200, 34), width: 210 }, { text: [{ text: 'Date: ' }, { ...v(mdy(val('rel_date')) || '____/____/____'), decoration: val('rel_date') ? 'underline' : undefined }], width: 'auto', margin: [12, 14, 0, 0] }], columnGap: 2, margin: [0, 6, 0, 0] },
+        row([u('Relationship to Child:', val('rel_relationship'), 'auto')]),
+        { text: [{ text: 'NOTE: A reproduced copy of this signed form is deemed to have the same force and effect as the original. A new Consent to Release Information form must be signed at the initial IFSP meeting and at each IFSP review and annual meeting. ' }, { text: 'Blank consent forms should never be signed by the parent.', decoration: 'underline' }], bold: true, fontSize: 8.5, margin: [0, 8, 0, 0] },
+      ] },
+    ],
+  };
+}
+
 // ---------- composing ----------
 // A deep copy that keeps functions (table layouts and heights) as they are.
 const copy = (x) => (Array.isArray(x) ? x.map(copy) : x && typeof x === 'object' ? Object.fromEntries(Object.entries(x).map(([k, val]) => [k, copy(val)])) : x);
