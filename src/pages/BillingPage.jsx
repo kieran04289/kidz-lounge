@@ -30,6 +30,9 @@ const GROUPS = [
 ];
 const MARK_STYLE = {
   X: { bg: '#52525B', fg: 'white', title: 'Session provided' },
+  // A group class session provided (src/groupClasses.js; Kieran, Nov 2026:
+  // counted like X, no colour of its own).
+  G: { bg: '#52525B', fg: 'white', title: 'Group class' },
   // Same as the schedule: A = the Canceled status color, M = the make-up
   // green (MU), E = the eval blue (Eval tag) -- SchedulePage.jsx.
   A: { bg: statusColor('Canceled'), fg: 'white', title: 'Child absent' },
@@ -69,7 +72,7 @@ const settingOf = (room) => {
   return m[1] ? m[1][0].toUpperCase() : '';
 };
 // Marks that count as a session provided (the sheet's Total).
-const COUNTED = ['X', 'M', 'E'];
+const COUNTED = ['X', 'G', 'M', 'E'];
 
 const pad = (n) => String(n).padStart(2, '0');
 const monthKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
@@ -281,7 +284,7 @@ export default function BillingPage({ section = 'payroll' }) {
   // a session with no room or an older offsite one with no setting.
   const perSetting = (atHome) => Object.fromEntries(days.map(d => [d, (sheet?.rows || []).reduce((t, r) => t + (r.days[d] || []).filter(e => COUNTED.includes(e.mark) && (settingOf(e.room) === 'H') === atHome).length, 0)]));
   const settingRows = [['Home', perSetting(true), 'Home sessions provided each day'], ['Center & School', perSetting(false), 'Every other session provided each day: center, school, or no setting']];
-  const perDay = Object.fromEntries(days.map(d => [d, (sheet?.rows || []).reduce((t, r) => t + (r.days[d] || []).filter(e => e.mark === 'X' || e.mark === 'M' || e.mark === 'E').length, 0)]));
+  const perDay = Object.fromEntries(days.map(d => [d, (sheet?.rows || []).reduce((t, r) => t + (r.days[d] || []).filter(e => COUNTED.includes(e.mark)).length, 0)]));
   const grand = grouped.reduce((t, g) => ({ scheduled: t.scheduled + g.scheduled, total: t.total + g.total }), { scheduled: 0, total: 0 });
   const colCount = 4 + days.length + 2;
   // The payroll totals, PTO / UPTO and Reviewed: under the key, or (with

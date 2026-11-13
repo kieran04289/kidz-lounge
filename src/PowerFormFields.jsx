@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef } from 'react';
 import { DateField } from './pages/SchedulePage';
 import { formatPhone } from './phone';
 import { INK, MUTED, HAIRLINE, TONES, NUMERIC, buttonStyle } from './uiTokens';
@@ -160,16 +160,23 @@ function FieldInput({ field, value, onChange, error, disabled }) {
   );
 }
 
-// The letterhead at the top of a form: the logo top left, the practice's
-// details beside it (under it on a phone).
+// The letterhead at the top of a form, inside its page (Kieran, Nov 2026:
+// centered): the logo, the practice's name, its details and tagline, then a
+// thin line. The PDF copy matches (buildPowerFormPdf in src/powerForms.js).
 export function PowerFormLetterhead() {
   return (
-    <div style={{ display: 'flex', gap: '10px 20px', alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
-      <img src={CLINIC.logo} alt={CLINIC.name} style={{ display: 'block', height: 84, width: 'auto' }} />
-      <div style={{ fontSize: 14, color: MUTED, lineHeight: 1.5, minWidth: 0 }}>
-        <div style={{ fontWeight: 600, color: INK, fontSize: 17 }}>{LETTERHEAD.name}</div>
-        {LETTERHEAD.lines.map(l => <div key={l}>{l}</div>)}
-        <div style={{ fontStyle: 'italic' }}>{LETTERHEAD.tagline}</div>
+    <div style={{ textAlign: 'center', paddingBottom: 16, marginBottom: 20, borderBottom: `1px solid ${HAIRLINE}` }}>
+      <img src={CLINIC.logo} alt={CLINIC.name} style={{ display: 'block', height: 76, width: 'auto', margin: '0 auto 8px' }} />
+      <div style={{ fontWeight: 600, color: INK, fontSize: 17, lineHeight: 1.35 }}>{LETTERHEAD.name}</div>
+      <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.5, marginTop: 3, overflowWrap: 'anywhere' }}>
+        {/* Each item (address, phone, email, website) stays whole, so a
+            narrow phone breaks the line between items, never inside one. */}
+        {LETTERHEAD.lines.map(l => (
+          <div key={l}>
+            {l.split(' · ').map((part, i) => <Fragment key={part}>{i > 0 && ' · '}<span style={{ whiteSpace: 'nowrap' }}>{part}</span></Fragment>)}
+          </div>
+        ))}
+        {LETTERHEAD.tagline && <div style={{ fontStyle: 'italic', marginTop: 2 }}>{LETTERHEAD.tagline}</div>}
       </div>
     </div>
   );

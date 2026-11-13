@@ -3294,32 +3294,18 @@ function PatientAppointmentModal({ providers, existing, defaultDate, prefill, on
           }
         }
       } else if (pendingSeriesId) {
-        // Ends the old series the day before this occurrence, removes this
-        // occurrence's own exception row if it already had one (its
-        // changes become the new series' baseline pattern instead of a
-        // one-off override), then starts a fresh series from this date
-        // forward with the edited pattern -- seamless from the user's view.
-        const occDate = existing.appointment_date;
-        const dayBefore = dateToInputValue(new Date(new Date(occDate + 'T00:00:00').getTime() - 24 * 60 * 60 * 1000));
-        await api.endRecurringSeries(pendingSeriesId, dayBefore);
-
-        if (!existing.is_virtual && existing.id) {
-          await api.deleteAppointment(existing.id);
-        }
-
-        const newWeekday = new Date(pendingEditRecord.appointment_date + 'T00:00:00').getDay();
-        await api.createRecurringSeries({
-          patient_name: pendingEditRecord.patient_name,
-          provider: pendingEditRecord.provider,
-          weekday: newWeekday,
-          appointment_time: pendingEditRecord.appointment_time,
-          duration: pendingEditRecord.duration,
-          treatment_area: pendingEditRecord.treatment_area,
-          appointment_status: pendingEditRecord.appointment_status,
-          start_date: pendingEditRecord.appointment_date,
-          ...(pendingEditRecord.hours_ok ? { hours_ok: pendingEditRecord.hours_ok } : {}),
-          // A group class child stays in the class (routes/groupClasses.js).
-          ...(existing.group_class_id != null ? { group_class_id: existing.group_class_id } : {}),
+        // The new pattern from this occurrence on, in one save on the server
+        // (kidz-lounge-api /recurring-series/:id/change-from): the series
+        // ends the day before, a copy starts with the change, and the later
+        // weeks that already have their own row (confirmed, a room, a
+        // comment...) move onto it. This used to end the series and start a
+        // new one from here, which left those rows at the old time: next
+        // week then showed twice and the child was flagged as double-booked
+        // (Kieran, Nov 2026). The occurrence's original date, not its
+        // current one, says where the change starts.
+        await api.changeRecurringSeriesFrom(pendingSeriesId, {
+          ...pendingEditRecord,
+          from_date: String(existing.is_virtual ? existing.appointment_date : (existing.exception_occurrence_date || existing.appointment_date)).slice(0, 10),
         });
       } else {
         const targets = [{ id: existing.id, appointment_date: pendingEditRecord.appointment_date }, ...futureMatches.map(m => ({ id: m.id, appointment_date: m.appointment_date }))];
