@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom';
 import { api } from '../api';
 import { DateField } from './SchedulePage';
 import { PowerFormInputs, PowerFormLetterhead, PatientLabel } from '../PowerFormFields';
+import NycConsentForm from '../NycConsentForm';
+import { isNycConsent } from '../nycConsent';
 import { pfInputStyle, startingAnswers } from '../powerForms';
 import { INK, MUTED, HAIRLINE, PAGE_BG, FONT, TONES, ACCENT, buttonStyle } from '../uiTokens';
 import { CLINIC } from '../brand';
@@ -15,12 +17,13 @@ import { CLINIC } from '../brand';
 // parent fills them in one after another, and each is sent on its own, so
 // stopping halfway keeps the ones already done.
 
-function Shell({ children }) {
+// `letterhead`: off for NYC's consent form, which has NYC's own header.
+function Shell({ children, letterhead = true }) {
   return (
     <div style={{ minHeight: '100vh', background: PAGE_BG, fontFamily: FONT, color: INK }}>
       <div style={{ maxWidth: 680, margin: '0 auto', padding: '28px 16px 60px' }}>
         <div style={{ background: 'white', border: `1px solid ${HAIRLINE}`, borderRadius: 8, padding: '22px 20px' }}>
-          <PowerFormLetterhead />
+          {letterhead && <PowerFormLetterhead />}
           {children}
         </div>
         <p style={{ fontSize: 12, color: MUTED, marginTop: 14, lineHeight: 1.5 }}>
@@ -123,8 +126,11 @@ export default function PowerFormPage() {
       </Shell>
     );
   }
+  // NYC's consent is filled in on NYC's own page (src/nycConsent.js).
+  const nyc = isNycConsent(current.fields);
+  const change = (id, v) => { setValuesById(x => ({ ...x, [currentId]: { ...(x[currentId] || {}), [id]: v } })); setErrors(e => ({ ...e, [id]: undefined })); };
   return (
-    <Shell>
+    <Shell letterhead={!nyc}>
       {form.packet && (
         <div style={{ marginBottom: 18, paddingBottom: 14, borderBottom: `1px solid ${HAIRLINE}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 8 }}>
@@ -150,13 +156,18 @@ export default function PowerFormPage() {
           </ol>
         </div>
       )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <h1 style={{ fontSize: 26, fontWeight: 650, margin: '2px 0 4px', lineHeight: 1.25, flex: '1 1 260px' }}>{current.form_name}</h1>
-        {!form.packet && <PatientLabel label={form.label} />}
-      </div>
-      {current.intro && <p style={{ margin: '8px 0 18px', fontSize: 15, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{current.intro}</p>}
-      <PowerFormInputs key={currentId} fields={current.fields} values={values} errors={errors} disabled={busy}
-        onChange={(id, v) => { setValuesById(x => ({ ...x, [currentId]: { ...(x[currentId] || {}), [id]: v } })); setErrors(e => ({ ...e, [id]: undefined })); }} />
+      {nyc ? (
+        <NycConsentForm key={currentId} fields={current.fields} values={values} errors={errors} disabled={busy} onChange={change} />
+      ) : (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            <h1 style={{ fontSize: 26, fontWeight: 650, margin: '2px 0 4px', lineHeight: 1.25, flex: '1 1 260px' }}>{current.form_name}</h1>
+            {!form.packet && <PatientLabel label={form.label} />}
+          </div>
+          {current.intro && <p style={{ margin: '8px 0 18px', fontSize: 15, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{current.intro}</p>}
+          <PowerFormInputs key={currentId} fields={current.fields} values={values} errors={errors} disabled={busy} onChange={change} />
+        </>
+      )}
       {message && <p role="alert" style={{ color: TONES.danger.fg, fontSize: 14, margin: '18px 0 0' }}>{message}</p>}
       <div style={{ marginTop: 22, paddingTop: 16, borderTop: `1px solid ${HAIRLINE}` }}>
         <button type="button" onClick={submit} disabled={busy} style={buttonStyle('primary', { padding: '10px 18px', fontSize: 15 })}>
