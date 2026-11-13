@@ -25,6 +25,7 @@ Each row is a patient on the provider's caseload that month: anyone with an appo
 | Mark | Meaning |
 |---|---|
 | **X** | Session provided |
+| **G** | Group class session provided |
 | **A** | Child absent (Canceled or No Show) |
 | **PA** | Provider absent (any time off or block on their schedule during the session) |
 | **H** | Holiday |
@@ -32,7 +33,7 @@ Each row is a patient on the provider's caseload that month: anyone with an appo
 | **M** | Make-up session |
 | **E** | Evaluation |
 
-- **Sched.** counts the sessions booked that month, and **Sessions** counts those provided (X, M or E). A make-up counts as a session but not as booked, because the session it replaces was already booked.
+- **Sched.** counts the sessions booked that month, and **Sessions** counts those provided (X, G, M or E). A group class session counts the same as any other. A make-up counts as a session but not as booked, because the session it replaces was already booked.
 - The bar at the bottom totals each group, shows sessions provided out of booked, and the provider's PTO and UPTO hours that month.
 
 <!-- only: admin -->
