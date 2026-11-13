@@ -191,6 +191,9 @@ export const api = {
   endRecurringSeries: (id, endDate) => request(`/recurring-series/${id}/end`, { method: 'PUT', body: JSON.stringify({ end_date: endDate }) }),
   // A new setting from one occurrence on (routes/appointments.js /split): { from_date, treatment_area, occurrence_date }.
   splitRecurringSeries: (id, body) => request(`/recurring-series/${id}/split`, { method: 'POST', body: JSON.stringify(body) }),
+  // "This & all future" for a time / day / provider / room / status change (routes/appointments.js /change-from):
+  // { from_date, appointment_date, appointment_time, duration, provider, treatment_area, appointment_status, ... }.
+  changeRecurringSeriesFrom: (id, body) => request(`/recurring-series/${id}/change-from`, { method: 'POST', body: JSON.stringify(body) }),
   purgeFutureRecurringExceptions: (id, fromDate) => request(`/recurring-series/${id}/purge-future-exceptions`, { method: 'PUT', body: JSON.stringify({ from_date: fromDate }) }),
   createRecurringException: (seriesId, record) => request(`/recurring-series/${seriesId}/exceptions`, { method: 'POST', body: JSON.stringify(record) }),
   // "Okay outside my hours": { ok, note } (src/hoursOk.js).
