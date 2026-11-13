@@ -8,14 +8,13 @@ export default {
   favicon: '/logo.png',
   // The letterhead on Power Forms (the parent's page and the PDF copies),
   // as on the paper forms (Kieran, Oct 2026: "full letterhead").
+  // Nov 2026: Suite 1 added; the websites line and the tagline removed.
   letterhead: {
     name: 'The Kidz Lounge Related Services, LLC',
     lines: [
-      '82-12 151st Ave, Howard Beach, NY 11414 · (718) 848-0875',
+      '82-12 151st Ave, Suite 1, Howard Beach NY 11414 · (718) 848-0875',
       'kidzlounge.net · thekidzloungeny@gmail.com',
-      'www.confidentkidzny.com · www.languageloungeny.com',
     ],
-    tagline: 'Providing Occupational, Physical and Speech Therapy. We also offer classes for kidz.',
   },
   // Optional features (Oct 2026), matched by FEATURES on the clinic's API
   // (kidz-lounge-api lib/features.js). ei: the EMR for NYC Early
