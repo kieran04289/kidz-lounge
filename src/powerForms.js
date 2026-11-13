@@ -66,15 +66,15 @@ export async function buildPowerFormPdf(form, patient) {
   const dob = patient.Date_of_Birth ? String(patient.Date_of_Birth).slice(0, 10) : '';
   const [pdfMake, logo] = await Promise.all([loadPdfMake(), logoDataUrl()]);
   const content = [
+    // The letterhead, centered like the parent's page (PowerFormLetterhead).
+    ...(logo ? [{ image: logo, fit: [140, 64], alignment: 'center', margin: [0, 0, 0, 6] }] : []),
     {
-      columns: [
-        ...(logo ? [{ image: logo, fit: [150, 75], width: 160 }] : []),
-        {
-          width: '*', fontSize: 9.5, color: '#52525B', margin: [0, 4, 0, 0],
-          stack: [{ text: LETTERHEAD.name, bold: true, color: '#18181B', fontSize: 12 }, ...LETTERHEAD.lines, { text: LETTERHEAD.tagline, italics: true, margin: [0, 2, 0, 0] }],
-        },
+      alignment: 'center', fontSize: 9.5, color: '#52525B', margin: [0, 0, 0, 8],
+      stack: [
+        { text: LETTERHEAD.name, bold: true, color: '#18181B', fontSize: 12, margin: [0, 0, 0, 2] },
+        ...LETTERHEAD.lines,
+        ...(LETTERHEAD.tagline ? [{ text: LETTERHEAD.tagline, italics: true, margin: [0, 2, 0, 0] }] : []),
       ],
-      columnGap: 12, margin: [0, 0, 0, 8],
     },
     { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 499, y2: 0, lineWidth: 0.75, lineColor: '#D4D4D8' }], margin: [0, 0, 0, 14] },
     {

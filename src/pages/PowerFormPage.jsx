@@ -19,8 +19,8 @@ function Shell({ children }) {
   return (
     <div style={{ minHeight: '100vh', background: PAGE_BG, fontFamily: FONT, color: INK }}>
       <div style={{ maxWidth: 680, margin: '0 auto', padding: '28px 16px 60px' }}>
-        <PowerFormLetterhead />
         <div style={{ background: 'white', border: `1px solid ${HAIRLINE}`, borderRadius: 8, padding: '22px 20px' }}>
+          <PowerFormLetterhead />
           {children}
         </div>
         <p style={{ fontSize: 12, color: MUTED, marginTop: 14, lineHeight: 1.5 }}>

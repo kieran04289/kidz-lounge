@@ -319,8 +319,8 @@ function TemplateEditor({ template, setup, onDone, onCancel }) {
       {preview ? (
         <div style={{ background: PAGE_BG, borderRadius: 8, padding: '20px 16px' }}>
           <div style={{ maxWidth: 680, margin: '0 auto' }}>
-            <PowerFormLetterhead />
             <div style={{ ...card, padding: '22px 20px' }}>
+              <PowerFormLetterhead />
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 6 }}>
                 <h3 style={{ fontSize: 26, fontWeight: 650, margin: '2px 0 0', color: INK, lineHeight: 1.25, flex: '1 1 260px' }}>{name || 'Untitled form'}</h3>
                 <PatientLabel label={{ name: 'Sample Child', dob: '2023-01-15', mrn: '10000001' }} />
